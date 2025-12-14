@@ -1,14 +1,17 @@
 from fastapi import FastAPI
 import imaplib
 import email
+import redis
 from dotenv import load_dotenv
 import os
+import model
 
 load_dotenv()
 
 
 
 app=FastAPI()
+
 
 imap_server=os.getenv("imap_server")
 username=os.getenv("username")
@@ -27,7 +30,6 @@ def read_root():
     status,messages=mail.uid('search', None, 'UNSEEN')
     messages=messages[0].decode('utf-8')
     messages=messages.split()
-    breakpoint()
     for ele in messages:
         msg=mail.fetch(ele,'RFC822')
         raw=msg[1][0][1]
