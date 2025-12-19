@@ -1,21 +1,18 @@
+from dotenv import load_dotenv
 from fastapi import FastAPI
 import imaplib
 import email
-import redis
-from dotenv import load_dotenv
 import os
 import model
 
 load_dotenv()
 
-
-
 app=FastAPI()
-
 
 imap_server=os.getenv("imap_server")
 username=os.getenv("username")
 password=os.getenv("password")
+session=model.session
 
 mail= imaplib.IMAP4_SSL(imap_server)
 
