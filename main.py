@@ -18,6 +18,9 @@ mail= imaplib.IMAP4_SSL(imap_server)
 
 mail.login(username,password)
 
+@app.on_event("startup")
+async def startup():
+    await model.init_db()
 
 
 @app.get("/")
@@ -27,6 +30,10 @@ def read_root():
     status,messages=mail.uid('search', None, 'UNSEEN')
     messages=messages[0].decode('utf-8')
     messages=messages.split()
+    report_data=model.ReportData(reportUrl="reported_url",processed=True)
+    session.add(report_data)
+    session.commit()
+    print("Added to DB")
     for ele in messages:
         msg=mail.fetch(ele,'RFC822')
         raw=msg[1][0][1]
@@ -39,6 +46,7 @@ def read_root():
                 filePath =os.path.join('/Users/abhishekraj/desktop/AI Business Automation Assistant/Downloaded Files',filename)
                 with open(filePath,'wb') as f:
                     f.write(part.get_payload(decode=True))
+
 
 
    

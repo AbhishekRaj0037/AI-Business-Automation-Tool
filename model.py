@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 # from sqlalchemy import create_engine
-from sqlalchemy.engine import URL
+# from sqlalchemy.engine import URL
 
 
 
@@ -37,4 +37,3 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-init_db()
