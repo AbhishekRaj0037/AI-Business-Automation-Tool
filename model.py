@@ -16,10 +16,12 @@ from sqlalchemy.orm import sessionmaker
 #     port=5432
 # )
 
+
 url="postgresql+asyncpg://localhost:5432/ai_business_automation_assistant"
 engine=create_async_engine(url)
-Session=sessionmaker(bind=engine)
+Session=sessionmaker(engine)
 session=Session()
+
 
 Base=declarative_base()
 
@@ -37,3 +39,4 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+print("Model is executed")

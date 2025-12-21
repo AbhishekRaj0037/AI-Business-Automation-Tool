@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 import imaplib
 import email
 import os
@@ -7,7 +8,13 @@ import model
 
 load_dotenv()
 
-app=FastAPI()
+@asynccontextmanager
+async def lifespan(app:FastAPI):
+    await model.init_db()
+    yield
+
+
+app=FastAPI(lifespan=lifespan)
 
 imap_server=os.getenv("imap_server")
 username=os.getenv("username")
@@ -17,14 +24,12 @@ session=model.session
 mail= imaplib.IMAP4_SSL(imap_server)
 
 mail.login(username,password)
+print("Main is executed")
 
-@app.on_event("startup")
-async def startup():
-    await model.init_db()
 
 
 @app.get("/")
-def read_root():
+async def read_root():
     mail.select("inbox")
     # status,messages=mail.search(None,"ALL")
     status,messages=mail.uid('search', None, 'UNSEEN')
@@ -32,7 +37,7 @@ def read_root():
     messages=messages.split()
     report_data=model.ReportData(reportUrl="reported_url",processed=True)
     session.add(report_data)
-    session.commit()
+    await session.commit()
     print("Added to DB")
     for ele in messages:
         msg=mail.fetch(ele,'RFC822')
