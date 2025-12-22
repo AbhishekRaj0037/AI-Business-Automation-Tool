@@ -4,13 +4,30 @@ from contextlib import asynccontextmanager
 import imaplib
 import email
 import os
+from sqlalchemy.orm import declarative_base
+Base=declarative_base()
 import model
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.orm import sessionmaker
+
 
 load_dotenv()
 
+
+url="postgresql+asyncpg://localhost:5432/ai_business_automation_assistant"
+engine=create_async_engine(url)
+Session=sessionmaker(engine)
+session=Session()
+
+async def init_db():
+    async with AsyncSessionLocal() as session:
+        # await conn.run_sync(Base.metadata.create_all)
+        yield session
+
 @asynccontextmanager
 async def lifespan(app:FastAPI):
-    await model.init_db()
+    init_db()
     yield
 
 
@@ -19,12 +36,10 @@ app=FastAPI(lifespan=lifespan)
 imap_server=os.getenv("imap_server")
 username=os.getenv("username")
 password=os.getenv("password")
-session=model.session
 
 mail= imaplib.IMAP4_SSL(imap_server)
 
 mail.login(username,password)
-print("Main is executed")
 
 
 
