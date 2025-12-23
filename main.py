@@ -8,7 +8,7 @@ from sqlalchemy.orm import declarative_base
 Base=declarative_base()
 import model
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine,async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 
 
@@ -16,12 +16,16 @@ load_dotenv()
 
 
 url="postgresql+asyncpg://localhost:5432/ai_business_automation_assistant"
+
 engine=create_async_engine(url)
-Session=sessionmaker(engine)
+
+
+
+Session=async_sessionmaker(engine)
 session=Session()
 
 async def init_db():
-    async with AsyncSessionLocal() as session:
+    async with session() as session:
         # await conn.run_sync(Base.metadata.create_all)
         yield session
 
@@ -51,6 +55,9 @@ async def read_root():
     messages=messages[0].decode('utf-8')
     messages=messages.split()
     report_data=model.ReportData(reportUrl="reported_url",processed=True)
+    # session.add(report_data)
+    # await session.commit()
+    # async with AsyncSessionLocal() as session:
     session.add(report_data)
     await session.commit()
     print("Added to DB")
