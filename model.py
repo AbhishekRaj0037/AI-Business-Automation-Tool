@@ -5,10 +5,10 @@ from main import Base
 
 class ReportData(Base):
     __tablename__="Report Data"
-
     id=Column(Integer,primary_key=True)
+    uid=Column(String)
     reportUrl=Column(String)
     processed=Column(Boolean)
 
 
-
+# metadata=Base.metadata
