@@ -7,21 +7,11 @@ import os
 from sqlalchemy.orm import declarative_base
 Base=declarative_base()
 import model
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine,async_sessionmaker
-from sqlalchemy.orm import sessionmaker
-import cloudinary
+from FileUpload import cloudinary
 import cloudinary.uploader
 
 load_dotenv()
-
-
-cloudinary.config( 
-  cloud_name = "dagjmj2ww", 
-  api_key = "683249745342721", 
-  api_secret = "-9trxoTxuR9gXkor5k-t8bcf7n8",
-)
-breakpoint()
 
 url="postgresql+asyncpg://localhost:5432/ai_business_automation_assistant"
 engine=create_async_engine(url)
@@ -51,31 +41,13 @@ mail= imaplib.IMAP4_SSL(imap_server)
 
 mail.login(username,password)
 
-try:
-    cloudinary.uploader.upload("Order_ID_7618478374.pdf", 
-    asset_folder = "", 
-    public_id = "Test",
-    overwrite = True, 
-    resource_type = "pdf")
-    print("File uploaded successfully")
-except Exception as E:
-    print(E)
-
 
 @app.get("/")
 async def read_root():
     mail.select("inbox")
-    # status,messages=mail.search(None,"ALL")
     status,messages=mail.uid('search', None, 'UNSEEN')
     messages=messages[0].decode('utf-8')
     messages=messages.split()
-    report_data=model.ReportData(uid="Test",reportUrl="reported_url",processed=True)
-    # session.add(report_data)
-    # await session.commit()
-    # async with AsyncSessionLocal() as session:
-    session.add(report_data)
-    await session.commit()
-    print("Added to DB")
     for ele in messages:
         msg=mail.fetch(ele,'RFC822')
         raw=msg[1][0][1]
@@ -86,9 +58,22 @@ async def read_root():
             filename=part.get_filename()
             if bool(filename):
                 filePath =os.path.join('/Users/abhishekraj/desktop/AI Business Automation Assistant/Downloaded Files',filename)
-
                 with open(filePath,'wb') as f:
                     f.write(part.get_payload(decode=True))
+                try:
+                    result=cloudinary.uploader.upload(filePath, 
+                    asset_folder = "AI Business Automation Assistant", 
+                    public_id = "Test",
+                    overwrite = True, 
+                    resource_type = "raw")
+                    print("File uploaded successfully")
+                    url=result["url"]
+                    report_data=model.ReportData(uid=ele,reportUrl=url,processed=True)
+                    session.add(report_data)
+                    await session.commit()
+                    print("Added to DB")
+                except Exception as E:
+                    print(E)
 
 
 
