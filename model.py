@@ -1,7 +1,8 @@
 
 from sqlalchemy import Column,Integer,String,Boolean
 from sqlalchemy.ext.asyncio import AsyncEngine
-from main import Base
+from sqlalchemy.orm import declarative_base
+Base=declarative_base()
 
 class ReportData(Base):
     __tablename__="Report Data"
@@ -9,6 +10,3 @@ class ReportData(Base):
     uid=Column(String)
     reportUrl=Column(String)
     processed=Column(Boolean)
-
-
-# metadata=Base.metadata
