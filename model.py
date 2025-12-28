@@ -9,4 +9,5 @@ class ReportData(Base):
     id=Column(Integer,primary_key=True)
     uid=Column(String)
     reportUrl=Column(String)
-    processed=Column(Boolean)
+    stored=Column(Boolean,default=False)
+    processed=Column(Boolean,default=False)

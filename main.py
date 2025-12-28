@@ -9,6 +9,7 @@ import model
 from FileUpload import cloudinary
 import cloudinary.uploader
 from DataBase import session
+from sqlalchemy import select
 
 @asynccontextmanager
 async def lifespan(app:FastAPI):
@@ -21,6 +22,8 @@ app=FastAPI(lifespan=lifespan)
 imap_server=os.getenv("imap_server")
 username=os.getenv("username")
 password=os.getenv("password")
+
+file_download_path=os.getenv("file_download_path")
 
 mail= imaplib.IMAP4_SSL(imap_server)
 mail.login(username,password)
@@ -40,14 +43,18 @@ async def read_root():
             if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
                 continue
             try:
+                result=await session.execute(select(model.ReportData).where(model.ReportData.uid==uid))
+                result=result.scalars().first()
+                if result is None or result.processed is True:
+                    continue
                 filename=part.get_filename()
-                if bool(filename):
-                    filePath =os.path.join('/Users/abhishekraj/desktop/AI Business Automation Assistant/Downloaded Files',filename)
+                if filename:
+                    filePath =os.path.join(file_download_path,filename)
                     with open(filePath,'wb') as f:
                         f.write(part.get_payload(decode=True))
                     result=cloudinary.uploader.upload(filePath, 
                     asset_folder = "AI Business Automation Assistant", 
-                    public_id = "Test",
+                    public_id = filename,
                     overwrite = True, 
                     resource_type = "raw")
                     print("File uploaded successfully")
