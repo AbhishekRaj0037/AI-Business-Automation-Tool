@@ -1,13 +1,27 @@
 
-from sqlalchemy import Column,Integer,String,Boolean
+from sqlalchemy import Column,Integer,String,Boolean,ForeignKey
 from sqlalchemy.ext.asyncio import AsyncEngine
-from sqlalchemy.orm import declarative_base
+from enum import Enum
+from sqlalchemy.orm import declarative_base,mapped_column,Mapped
 Base=declarative_base()
 
-class ReportData(Base):
-    __tablename__="Report Data"
+class StatusEnum(str, Enum):
+    pending = "pending"
+    uploaded = "uploaded"
+    processing = "processing"
+    completed = "completed"
+    failed = "failed"
+
+class email_metadata(Base):
+    __tablename__="EmailData"
     id=Column(Integer,primary_key=True)
-    uid=Column(String)
-    reportUrl=Column(String)
-    stored=Column(Boolean,default=False)
-    processed=Column(Boolean,default=False)
+    imap_uid=Column(String,unique=True,nullable=False)
+    total_pdfs=Column(Integer)
+    processed_pdfs=Column(Integer,default=0)
+
+class email_attachments_metadata(Base):
+    __tablename__="AttachmentData"
+    id=Column(Integer,primary_key=True)
+    email_id=Column(Integer,ForeignKey("EmailData.id"))
+    cloudinary_reportUrl=Column(String)
+    status: Mapped[StatusEnum]=mapped_column(default=StatusEnum.pending)

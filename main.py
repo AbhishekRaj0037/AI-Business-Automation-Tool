@@ -32,7 +32,9 @@ mail.login(username,password)
 @app.get("/")
 async def read_root():
     mail.select("inbox")
-    status,uids=mail.uid('search', None, 'UNSEEN')
+    # status,uids=mail.uid('search', None, 'UNSEEN')
+    status,uids=mail.uid('search', None, f'UID {28841 + 1}:*')
+    breakpoint()
     uids=uids[0].decode('utf-8')
     uid_list=uids.split()
     for uid in uid_list:
@@ -43,7 +45,7 @@ async def read_root():
             if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
                 continue
             try:
-                result=await session.execute(select(model.ReportData).where(model.ReportData.uid==uid))
+                result=await session.execute(select(model.email_metadata).where(model.email_metadata.uid==uid))
                 result=result.scalars().first()
                 if result is None or result.processed is True:
                     continue
@@ -59,7 +61,7 @@ async def read_root():
                     resource_type = "raw")
                     print("File uploaded successfully")
                     url=result["url"]
-                    report_data=model.ReportData(uid=uid,reportUrl=url,processed=True)
+                    report_data=model.email_metadata(uid=uid,reportUrl=url,processed=True)
                     session.add(report_data)
                     await session.commit()
                     print("Added to DB")
