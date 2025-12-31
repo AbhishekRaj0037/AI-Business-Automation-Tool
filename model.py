@@ -10,6 +10,7 @@ class StatusEnum(str, Enum):
     uploaded = "uploaded"
     processing = "processing"
     completed = "completed"
+    incomplete = "incomplete"
     failed = "failed"
 
 class email_metadata(Base):
@@ -18,6 +19,7 @@ class email_metadata(Base):
     imap_uid=Column(String,unique=True,nullable=False)
     total_pdfs=Column(Integer)
     processed_pdfs=Column(Integer,default=0)
+    status:Mapped[StatusEnum]=mapped_column(default=StatusEnum.incomplete)
 
 class email_attachments_metadata(Base):
     __tablename__="AttachmentData"
