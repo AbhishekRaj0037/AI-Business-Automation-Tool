@@ -11,7 +11,8 @@ import cloudinary.uploader
 from DataBase import session
 from sqlalchemy import select,desc
 from model import StatusEnum
-from email.utils import parseaddr
+from email.utils import parsedate_to_datetime
+from datetime import timezone,datetime
 
 @asynccontextmanager
 async def lifespan(app:FastAPI):
@@ -34,49 +35,41 @@ mail.login(username,password)
 @app.get("/")
 async def read_root():
     mail.select("inbox")
-    # status,uids=mail.uid('search', None, 'UNSEEN')
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)).limit(1))
     result=result.scalars().first()
     starting_uid_range=0
     if result is not None:
          starting_uid_range=result.imap_uid
-    starting_uid_range=int(starting_uid_range) 
     status,uids=mail.uid('search', None, f'UID {starting_uid_range + 1}:*')
     uids=uids[0].decode('utf-8')
     uid_list=uids.split()
     for uid in uid_list:
         mail_data=mail.fetch(uid,'RFC822')
-        # raw=mail_data[1][0][1]
         raw=mail_data[1][0][1]
         raw_message=email.message_from_bytes(raw)
-        raw_message=parseaddr(raw_message["from"])
-        breakpoint()
-        # count_of_document_file=0
-        for part in mail_data:
-            if type(part) is tuple:
-                email_from=part[1]['from']
-                subject=part[1]['subject']
-        print("Mail ends here")
-            # if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
-            #     continue
-            # filename=part.get_filename()
-            # if filename:
-            #     count_of_document_file=count_of_document_file+1
-        # is_uid_already_synced=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==uid))
-        # is_uid_already_synced=is_uid_already_synced.scalars().first()
-        # if is_uid_already_synced is None:
-        #     is_uid_already_synced=False
-        # else:
-        #     is_uid_already_synced=True
-        # if is_uid_already_synced == False:
-        #     report_data=None
-        #     if count_of_document_file==0:
-        #         report_data=model.email_metadata(imap_uid=uid,total_pdfs=count_of_document_file,processed_pdfs=0,status=StatusEnum.completed)
-        #     else:
-        #         report_data=model.email_metadata(imap_uid=uid,total_pdfs=count_of_document_file,processed_pdfs=0,status=StatusEnum.incomplete)
-        #     session.add(report_data)
-        #     await session.commit()
-        #     print("Added to DB")
+        mail_from=raw_message["from"]
+        subject=raw_message["Subject"]
+        received_at=raw_message["Date"]
+        aware = parsedate_to_datetime(received_at)
+        received_at = aware.astimezone(timezone.utc).replace(tzinfo=None)
+        count_of_document_file=0
+        for part in raw_message.walk():
+            if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
+                continue
+            filename=part.get_filename()
+            if filename:
+                count_of_document_file=count_of_document_file+1
+        is_uid_already_synced=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(uid)))
+        is_uid_already_synced=is_uid_already_synced.scalars().first()
+        if is_uid_already_synced is None:
+            report_data=None
+            if count_of_document_file==0:
+                report_data=model.email_metadata(imap_uid=int(uid),total_pdfs=count_of_document_file,processed_pdfs=0,status=StatusEnum.completed,mail_from=mail_from,subject=subject,received_at=received_at)
+            else:
+                report_data=model.email_metadata(imap_uid=int(uid),total_pdfs=count_of_document_file,processed_pdfs=0,status=StatusEnum.incomplete,mail_from=mail_from,subject=subject,received_at=received_at)
+            session.add(report_data)
+            await session.commit()
+            print("Added to DB")
             # try:
             #     result=await session.execute(select(model.email_metadata).where(model.email_metadata.uid==uid))
             #     result=result.scalars().first()

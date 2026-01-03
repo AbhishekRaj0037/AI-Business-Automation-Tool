@@ -16,7 +16,7 @@ class StatusEnum(str, Enum):
 class email_metadata(Base):
     __tablename__="EmailData"
     id=Column(Integer,primary_key=True)
-    imap_uid=Column(String,unique=True,nullable=False)
+    imap_uid=Column(Integer,unique=True,nullable=False)
     total_pdfs=Column(Integer)
     processed_pdfs=Column(Integer,default=0)
     status:Mapped[StatusEnum]=mapped_column(default=StatusEnum.incomplete)
