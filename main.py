@@ -30,11 +30,11 @@ file_download_path=os.getenv("file_download_path")
 
 mail= imaplib.IMAP4_SSL(imap_server)
 mail.login(username,password)
+mail.select("inbox")
 
 
 @app.get("/")
 async def read_root():
-    mail.select("inbox")
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)).limit(1))
     result=result.scalars().first()
     starting_uid_range=0
@@ -95,5 +95,10 @@ async def read_root():
             #         print(E)
 
 
-
+@app.get("/get-all-reports")
+async def get_all_reports():
+    result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)))
+    result=result.scalars().all()
+    breakpoint()
+    pass
    

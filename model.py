@@ -19,10 +19,23 @@ class email_metadata(Base):
     imap_uid=Column(Integer,unique=True,nullable=False)
     total_pdfs=Column(Integer)
     processed_pdfs=Column(Integer,default=0)
+    subject=Column(String)
     status:Mapped[StatusEnum]=mapped_column(default=StatusEnum.incomplete)
     mail_from=Column(String,nullable=False)
-    subject=Column(String)
     received_at = mapped_column(DateTime,nullable=False)
+
+    def __repr__(self):
+        return (
+            f"<email_metadata("
+            f"id={self.id}, "
+            f"imap_uid={self.imap_uid}, "
+            f"total_pdfs={self.total_pdfs},"
+            f"processed_pdfs={self.processed_pdfs},"
+            f"status={self.status},"
+            f"mail_from={self.mail_from},"
+            f"received_at={self.received_at}, "
+            f"subject={self.subject})>"
+        )
 
 class email_attachments_metadata(Base):
     __tablename__="AttachmentData"
