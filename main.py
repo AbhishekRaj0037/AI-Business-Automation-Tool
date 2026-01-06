@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI
+from fastapi import FastAPI,Query
 from contextlib import asynccontextmanager
 import imaplib
 import email
@@ -8,19 +8,36 @@ import os
 import model
 from FileUpload import cloudinary
 import cloudinary.uploader
-from DataBase import session
+from DataBase import session,get_session
 from sqlalchemy import select,desc
 from model import StatusEnum
 from email.utils import parsedate_to_datetime
 from datetime import timezone,datetime
+from schemas import EmailMetaDataOut
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
+from typing import List
+from sqlalchemy.ext.asyncio import AsyncSession
 
-@asynccontextmanager
-async def lifespan(app:FastAPI):
-    # DataBase.init_db()
-    yield
+from fastapi_sa_orm_filter.main import FilterCore
+from fastapi_sa_orm_filter.operators import Operators as ops
+
+my_objects_filter={
+    'status': [ops.eq, ops.in_, ops.like, ops.startswith, ops.contains],
+    'mail_from': [ops.eq, ops.in_, ops.like, ops.startswith, ops.contains],
+    'received_at': [ops.between, ops.eq, ops.gt, ops.lt, ops.in_],
+}
 
 
-app=FastAPI(lifespan=lifespan)
+
+# @asynccontextmanager
+# async def lifespan(app:FastAPI):
+#     # DataBase.init_db()
+#     yield
+
+# Removed lifespan=lifespan from app=FastAPI() line for the manual creation of table.
+
+app=FastAPI()
 
 imap_server=os.getenv("imap_server")
 username=os.getenv("username")
@@ -102,3 +119,15 @@ async def get_all_reports():
     breakpoint()
     pass
    
+
+@app.get("/get-reports")
+async def get_reports(
+    objects_filter: str =Query(default=''),
+    db:AsyncSession=Depends(get_session)
+) -> List[EmailMetaDataOut]:
+    filter_result=FilterCore(model.email_metadata,my_objects_filter)
+    query=filter_result.get_query(objects_filter)
+    db_obj=await session.execute(query)
+    instance=db_obj.scalars().all()
+    breakpoint()
+    pass
