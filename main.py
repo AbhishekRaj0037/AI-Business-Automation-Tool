@@ -23,7 +23,7 @@ from fastapi_sa_orm_filter.main import FilterCore
 from fastapi_sa_orm_filter.operators import Operators as ops
 
 my_objects_filter={
-    'status': [ops.eq, ops.in_, ops.like, ops.startswith, ops.contains],
+    'status': [ops.eq, ops.in_],
     'mail_from': [ops.eq, ops.in_, ops.like, ops.startswith, ops.contains],
     'received_at': [ops.between, ops.eq, ops.gt, ops.lt, ops.in_],
 }
@@ -120,6 +120,9 @@ async def get_all_reports():
     pass
    
 
+# Query parameters will be like
+# For Example status__eq=incomplete&mail_from__like=%Abhishek%&received_at__between=2020-01-01,2020-01-01
+
 @app.get("/get-reports")
 async def get_reports(
     objects_filter: str =Query(default=''),
@@ -128,6 +131,8 @@ async def get_reports(
     filter_result=FilterCore(model.email_metadata,my_objects_filter)
     query=filter_result.get_query(objects_filter)
     db_obj=await session.execute(query)
-    instance=db_obj.scalars().all()
     breakpoint()
+    instance=db_obj.scalars().all()
     pass
+
+
