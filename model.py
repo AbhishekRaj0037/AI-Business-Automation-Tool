@@ -1,5 +1,5 @@
 
-from sqlalchemy import Column,Integer,String,Boolean,ForeignKey,DateTime
+from sqlalchemy import Column,Integer,String,Boolean,ForeignKey,DateTime,BigInteger
 from sqlalchemy.ext.asyncio import AsyncEngine
 from enum import Enum
 from sqlalchemy.orm import declarative_base,mapped_column,Mapped
@@ -41,5 +41,8 @@ class email_attachments_metadata(Base):
     __tablename__="AttachmentData"
     id=Column(Integer,primary_key=True)
     email_id=Column(Integer,ForeignKey("EmailData.id"))
+    file_name=Column(String)
+    file_size=Column(BigInteger)
     cloudinary_reportUrl=Column(String)
-    status: Mapped[StatusEnum]=mapped_column(default=StatusEnum.pending)        
+    status: Mapped[StatusEnum]=mapped_column(default=StatusEnum.pending)
+    checksum_sha256: Mapped[str]=mapped_column()        

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
+import hashlib
 
 from fastapi_sa_orm_filter.main import FilterCore
 from fastapi_sa_orm_filter.operators import Operators as ops
@@ -28,7 +29,18 @@ my_objects_filter={
     'received_at': [ops.between, ops.eq, ops.gt, ops.lt, ops.in_],
 }
 
+def checksum_from_part(part, algo="sha256", chunk_size=8192):
+    hasher = hashlib.new(algo)
 
+    payload = part.get_payload(decode=True)  # bytes
+    if payload is None:
+        return None
+
+    # Stream in chunks (safe for large files)
+    for i in range(0, len(payload), chunk_size):
+        hasher.update(payload[i:i + chunk_size])
+
+    return hasher.hexdigest()
 
 # @asynccontextmanager
 # async def lifespan(app:FastAPI):
@@ -48,7 +60,6 @@ file_download_path=os.getenv("file_download_path")
 mail= imaplib.IMAP4_SSL(imap_server)
 mail.login(username,password)
 mail.select("inbox")
-
 
 @app.get("/")
 async def read_root():
@@ -76,6 +87,7 @@ async def read_root():
             filename=part.get_filename()
             if filename:
                 count_of_document_file=count_of_document_file+1
+
         is_uid_already_synced=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(uid)))
         is_uid_already_synced=is_uid_already_synced.scalars().first()
         if is_uid_already_synced is None:
@@ -131,8 +143,48 @@ async def get_reports(
     filter_result=FilterCore(model.email_metadata,my_objects_filter)
     query=filter_result.get_query(objects_filter)
     db_obj=await session.execute(query)
-    breakpoint()
     instance=db_obj.scalars().all()
+    return instance
+
+
+
+@app.get("/fetch-mail-data")
+async def get_mail(
+    imap_uid:str = Query()
+):
+    mail_data=mail.fetch(imap_uid,'RFC822')
+    raw=mail_data[1][0][1]
+    raw_message=email.message_from_bytes(raw)
+    mail_from=raw_message["from"]
+    subject=raw_message["Subject"]
+    received_at=raw_message["Date"]
+    aware = parsedate_to_datetime(received_at)
+    received_at = aware.astimezone(timezone.utc).replace(tzinfo=None)
+    for part in raw_message.walk():
+        if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
+            continue
+        filename=part.get_filename()
+        if filename:
+            checksum = checksum_from_part(part)
+            is_uid_already_present=await session.execute(select(model.email_attachments_metadata).join(model.email_metadata,model.email_attachments_metadata.email_id==model.email_metadata.id).where(model.email_metadata.imap_uid==int(imap_uid) and model.email_attachments_metadata.checksum_sha256==checksum))
+            is_uid_already_present=is_uid_already_present.scalars().all()
+            if is_uid_already_present == []:
+                print("Inside")
+                result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid))) 
+                result=result.scalars().one()
+                mail_data=model.email_attachments_metadata(email_id=result.id,cloudinary_reportUrl="cloudinary_URL",status="Pending")
+                session.add(mail_data)
+                await session.commit()
+                print("Added to DB")
+            print("Outside")
+    return
     pass
 
 
+
+# class email_attachments_metadata(Base):
+#     __tablename__="AttachmentData"
+#     id=Column(Integer,primary_key=True)
+#     email_id=Column(Integer,ForeignKey("EmailData.id"))
+#     cloudinary_reportUrl=Column(String)
+#     status: Mapped[StatusEnum]=mapped_column(default=StatusEnum.pending)      
