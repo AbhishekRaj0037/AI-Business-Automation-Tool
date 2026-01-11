@@ -9,7 +9,7 @@ import model
 from FileUpload import cloudinary
 import cloudinary.uploader
 from DataBase import session,get_session
-from sqlalchemy import select,desc
+from sqlalchemy import select,update,desc
 from model import StatusEnum
 from email.utils import parsedate_to_datetime
 from datetime import timezone,datetime
@@ -20,6 +20,11 @@ from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 import hashlib
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from apscheduler.executors.pool import ThreadPoolExecutor
+from DataBase import DBUrl
+
 from fastapi_sa_orm_filter.main import FilterCore
 from fastapi_sa_orm_filter.operators import Operators as ops
 
@@ -28,6 +33,31 @@ my_objects_filter={
     'mail_from': [ops.eq, ops.in_, ops.like, ops.startswith, ops.contains],
     'received_at': [ops.between, ops.eq, ops.gt, ops.lt, ops.in_],
 }
+
+jobstores={
+    'default' : SQLAlchemyJobStore(url=DBUrl)
+}
+
+executors={
+    'default' : ThreadPoolExecutor(20)
+}
+
+job_defaults={
+    'coalesce' : True,
+    'max_instance' : 3
+}
+
+
+app=FastAPI()
+scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=job_defaults)
+
+@app.on_event("startup")
+async def on_start():
+    try:
+        scheduler.start()
+        print("Started scheduler successfully")
+    except Exception as err:
+        print("Error on scheduler =======>", err)
 
 def checksum_from_part(part, algo="sha256", chunk_size=8192):
     hasher = hashlib.new(algo)
@@ -49,7 +79,6 @@ def checksum_from_part(part, algo="sha256", chunk_size=8192):
 
 # Removed lifespan=lifespan from app=FastAPI() line for the manual creation of table.
 
-app=FastAPI()
 
 imap_server=os.getenv("imap_server")
 username=os.getenv("username")
@@ -80,22 +109,18 @@ async def read_root():
         received_at=raw_message["Date"]
         aware = parsedate_to_datetime(received_at)
         received_at = aware.astimezone(timezone.utc).replace(tzinfo=None)
-        count_of_document_file=0
-        for part in raw_message.walk():
-            if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
-                continue
-            filename=part.get_filename()
-            if filename:
-                count_of_document_file=count_of_document_file+1
+        # for part in raw_message.walk():
+        #     if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
+        #         continue
+        #     filename=part.get_filename()
+        #     if filename:
+        #         count_of_document_file=count_of_document_file+1
 
         is_uid_already_synced=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(uid)))
         is_uid_already_synced=is_uid_already_synced.scalars().first()
         if is_uid_already_synced is None:
             report_data=None
-            if count_of_document_file==0:
-                report_data=model.email_metadata(imap_uid=int(uid),total_pdfs=count_of_document_file,processed_pdfs=0,status=StatusEnum.completed,mail_from=mail_from,subject=subject,received_at=received_at)
-            else:
-                report_data=model.email_metadata(imap_uid=int(uid),total_pdfs=count_of_document_file,processed_pdfs=0,status=StatusEnum.incomplete,mail_from=mail_from,subject=subject,received_at=received_at)
+            report_data=model.email_metadata(imap_uid=int(uid),mail_from=mail_from,subject=subject,received_at=received_at)
             session.add(report_data)
             await session.commit()
             print("Added to DB")
@@ -128,7 +153,6 @@ async def read_root():
 async def get_all_reports():
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)))
     result=result.scalars().all()
-    breakpoint()
     pass
    
 
@@ -160,6 +184,10 @@ async def get_mail(
     received_at=raw_message["Date"]
     aware = parsedate_to_datetime(received_at)
     received_at = aware.astimezone(timezone.utc).replace(tzinfo=None)
+    is_uid_already_present=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
+    is_uid_already_present=is_uid_already_present.scalars().first()
+    if is_uid_already_present.status==StatusEnum.completed:
+        return
     for part in raw_message.walk():
         if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
             continue
@@ -169,22 +197,14 @@ async def get_mail(
             is_uid_already_present=await session.execute(select(model.email_attachments_metadata).join(model.email_metadata,model.email_attachments_metadata.email_id==model.email_metadata.id).where(model.email_metadata.imap_uid==int(imap_uid) and model.email_attachments_metadata.checksum_sha256==checksum))
             is_uid_already_present=is_uid_already_present.scalars().all()
             if is_uid_already_present == []:
-                print("Inside")
                 result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid))) 
                 result=result.scalars().one()
-                mail_data=model.email_attachments_metadata(email_id=result.id,cloudinary_reportUrl="cloudinary_URL",status="Pending")
+                mail_data=model.email_attachments_metadata(email_id=result.id,file_name=filename,file_size=len(part.get_payload(decode=True)),cloudinary_reportUrl="cloudinary_URL",status=StatusEnum.pending,checksum_sha256=checksum)
                 session.add(mail_data)
                 await session.commit()
                 print("Added to DB")
-            print("Outside")
+    result=update(model.email_metadata).where(model.email_metadata.imap_uid == int(imap_uid)).values(status=StatusEnum.completed)
+    await session.execute(result)
+    await session.commit()
+    
     return
-    pass
-
-
-
-# class email_attachments_metadata(Base):
-#     __tablename__="AttachmentData"
-#     id=Column(Integer,primary_key=True)
-#     email_id=Column(Integer,ForeignKey("EmailData.id"))
-#     cloudinary_reportUrl=Column(String)
-#     status: Mapped[StatusEnum]=mapped_column(default=StatusEnum.pending)      

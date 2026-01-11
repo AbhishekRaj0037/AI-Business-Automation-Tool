@@ -17,12 +17,13 @@ class email_metadata(Base):
     __tablename__="EmailData"
     id=Column(Integer,primary_key=True)
     imap_uid=Column(Integer,unique=True,nullable=False)
-    total_pdfs=Column(Integer)
-    processed_pdfs=Column(Integer,default=0)
     subject=Column(String)
-    status:Mapped[StatusEnum]=mapped_column(default=StatusEnum.incomplete)
     mail_from=Column(String,nullable=False)
     received_at = mapped_column(DateTime,nullable=False)
+    status:Mapped[StatusEnum]=mapped_column(default=StatusEnum.incomplete)
+    # total_pdfs=Column(Integer)
+    # processed_pdfs=Column(Integer,default=0)
+    
 
     def __repr__(self):
         return (
