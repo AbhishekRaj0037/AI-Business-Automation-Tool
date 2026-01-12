@@ -22,11 +22,14 @@ import hashlib
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.executors.asyncio import AsyncIOExecutor
 from DataBase import DBUrl
+import asyncio
 
 from fastapi_sa_orm_filter.main import FilterCore
 from fastapi_sa_orm_filter.operators import Operators as ops
+
+SQLAlchemyJobStoreURL=os.getenv("SQLAlchemyJobStore")
 
 my_objects_filter={
     'status': [ops.eq, ops.in_],
@@ -35,11 +38,11 @@ my_objects_filter={
 }
 
 jobstores={
-    'default' : SQLAlchemyJobStore(url=DBUrl)
+    'default' : SQLAlchemyJobStore(url=SQLAlchemyJobStoreURL)
 }
 
 executors={
-    'default' : ThreadPoolExecutor(20)
+    'default' : AsyncIOExecutor()
 }
 
 job_defaults={
@@ -51,13 +54,14 @@ job_defaults={
 app=FastAPI()
 scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=job_defaults)
 
+
 @app.on_event("startup")
-async def on_start():
+def on_start():
     try:
         scheduler.start()
         print("Started scheduler successfully")
     except Exception as err:
-        print("Error on scheduler =======>", err)
+        print("Scheduler giving error which is: ", err)
 
 def checksum_from_part(part, algo="sha256", chunk_size=8192):
     hasher = hashlib.new(algo)
@@ -89,6 +93,7 @@ file_download_path=os.getenv("file_download_path")
 mail= imaplib.IMAP4_SSL(imap_server)
 mail.login(username,password)
 mail.select("inbox")
+
 
 @app.get("/")
 async def read_root():
@@ -172,9 +177,9 @@ async def get_reports(
 
 
 
-@app.get("/fetch-mail-data")
+# @app.get("/fetch-mail-data")
 async def get_mail(
-    imap_uid:str = Query()
+    imap_uid:str
 ):
     mail_data=mail.fetch(imap_uid,'RFC822')
     raw=mail_data[1][0][1]
@@ -187,6 +192,7 @@ async def get_mail(
     is_uid_already_present=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
     is_uid_already_present=is_uid_already_present.scalars().first()
     if is_uid_already_present.status==StatusEnum.completed:
+        print("Triggered:      ",is_uid_already_present)
         return
     for part in raw_message.walk():
         if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
@@ -206,5 +212,20 @@ async def get_mail(
     result=update(model.email_metadata).where(model.email_metadata.imap_uid == int(imap_uid)).values(status=StatusEnum.completed)
     await session.execute(result)
     await session.commit()
+
+
+    is_uid_already_present=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
+    is_uid_already_present=is_uid_already_present.scalars().first()
+    if is_uid_already_present.status==StatusEnum.completed:
+        print("Triggered:      ",is_uid_already_present)
+        return
+
+
     
     return
+
+try:
+    job=scheduler.add_job(get_mail,trigger='interval',seconds=30,id="Call_Fetch_mail_with_the_id_28",kwargs={"imap_uid":"28"})
+    print("Successfully added job in job store.")
+except Exception as err:
+    print("You have error scheduling jobs:    ",err)

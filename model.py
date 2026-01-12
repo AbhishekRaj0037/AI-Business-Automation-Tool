@@ -30,12 +30,10 @@ class email_metadata(Base):
             f"<email_metadata("
             f"id={self.id}, "
             f"imap_uid={self.imap_uid}, "
-            f"total_pdfs={self.total_pdfs},"
-            f"processed_pdfs={self.processed_pdfs},"
-            f"status={self.status},"
+            f"subject={self.subject})>"
             f"mail_from={self.mail_from},"
             f"received_at={self.received_at}, "
-            f"subject={self.subject})>"
+            f"status={self.status},"
         )
 
 class email_attachments_metadata(Base):
