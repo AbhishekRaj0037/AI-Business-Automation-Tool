@@ -13,6 +13,41 @@ class StatusEnum(str, Enum):
     incomplete = "incomplete"
     failed = "failed"
 
+
+class User(Base):
+    __tablename__="User"
+    id=Column(Integer,primary_key=True)
+    username=Column(String,nullable=False)
+    password=Column(String,nullable=False)
+    email=Column(String,unique=True,nullable=False)
+    disabed=Column(Boolean,default=False)
+
+    def __repr__(self):
+        return (
+            f"<email_metadata("
+            f"id={self.id}, "
+            f"username={self.username}, "
+            f"password={self.password})>"
+            f"email={self.email}, "
+            f"disabed={self.disabed}, "
+        )
+    
+class Token(Base):
+    __tablename__="Tokens"
+
+    id=Column(Integer,primary_key=True)
+    token=Column(String,nullable=False)
+    user_id=Column(Integer,ForeignKey("User.id"))
+
+    def __repr__(self):
+        return (
+            f"<Tokens("
+            f"id={self.id}, "
+            f"token={self.token}, "
+            f"user_id={self.user_id})>"
+        )
+
+
 class email_metadata(Base):
     __tablename__="EmailData"
     id=Column(Integer,primary_key=True)
@@ -45,3 +80,15 @@ class email_attachments_metadata(Base):
     cloudinary_reportUrl=Column(String)
     status: Mapped[StatusEnum]=mapped_column(default=StatusEnum.pending)
     checksum_sha256: Mapped[str]=mapped_column()        
+
+    def __repr__(self):
+        return (
+            f"<AttachmentData("
+            f"id={self.id}, "
+            f"email_id={self.email_id}, "
+            f"file_name={self.file_name})>"
+            f"file_size={self.file_size},"
+            f"cloudinary_reportUrl={self.cloudinary_reportUrl}, "
+            f"status={self.status},"
+            f"checksum_sha256={self.checksum_sha256},"
+        )

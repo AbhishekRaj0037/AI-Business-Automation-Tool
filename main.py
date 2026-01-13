@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI,Query
+from fastapi import FastAPI,Query,HTTPException
 from contextlib import asynccontextmanager
 import imaplib
 import email
@@ -15,7 +15,7 @@ from email.utils import parsedate_to_datetime
 from datetime import timezone,datetime
 from schemas import EmailMetaDataOut
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
+from fastapi import Depends,Request
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 import hashlib
@@ -29,7 +29,11 @@ import asyncio
 from fastapi_sa_orm_filter.main import FilterCore
 from fastapi_sa_orm_filter.operators import Operators as ops
 
+from pwdlib import PasswordHash
+
 SQLAlchemyJobStoreURL=os.getenv("SQLAlchemyJobStore")
+
+password_hash=PasswordHash.recommended()
 
 my_objects_filter={
     'status': [ops.eq, ops.in_],
@@ -53,6 +57,13 @@ job_defaults={
 
 app=FastAPI()
 scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=job_defaults)
+
+SECRET_KEY="7e3fa174ea94139b8f08e6dbfbe75d1e9ecd4cd7a2958a743b8d3cbcd4302bdc"
+ALGORITHM="HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES=10
+REFRESH_TOKEN_EXPIRE_MINUTES=30*60
+
+
 
 
 @app.on_event("startup")
@@ -224,8 +235,42 @@ async def get_mail(
     
     return
 
-try:
-    job=scheduler.add_job(get_mail,trigger='interval',seconds=30,id="Call_Fetch_mail_with_the_id_28",kwargs={"imap_uid":"28"})
-    print("Successfully added job in job store.")
-except Exception as err:
-    print("You have error scheduling jobs:    ",err)
+
+@app.post("/create-user")
+async def create_user(request: Request):
+    body = await request.json()
+    result=await session.execute(select(model.User).where(model.User.email==body['email']))
+    result=result.scalars().all()
+    if result != []:
+        print("User already exsist")
+        return
+    hashed_password= password_hash.hash(body['password'])
+    user=model.User(username=body['email'],password=hashed_password,email=body['email'],disabed=body['disable'])
+    session.add(user)
+    await session.commit()
+    print("User Added to DB")
+    pass
+
+@app.post("/login-user")
+async def login_user(request:Request):
+    body=await request.json()
+    result=await session.execute(select(model.User).where(model.User.email==body['email']))
+    result=result.scalars().first()
+    if result == []:
+        print("User doesn't exsist")
+        return HTTPException(status_code=404,detail="User doesn't exsist")
+    hashed_password= password_hash.hash(body['password'])
+    breakpoint()
+    if hashed_password!=result.password:
+        print("Password Incorrect")
+        return HTTPException(status_code=401,detail="Password Incorrect")
+    
+    pass
+
+
+
+# try:
+#     job=scheduler.add_job(get_mail,trigger='interval',seconds=30,id="Call_Fetch_mail_with_the_id_28",kwargs={"imap_uid":"28"})
+#     print("Successfully added job in job store.")
+# except Exception as err:
+#     print("You have error scheduling jobs:    ",err)

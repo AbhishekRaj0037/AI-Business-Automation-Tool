@@ -25,9 +25,12 @@ Mako==1.3.10
 markdown-it-py==4.0.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
+psycopg2==2.9.11
+pwdlib==0.3.0
 pydantic==2.12.4
 pydantic_core==2.41.5
 Pygments==2.19.2
+PyJWT==2.10.1
 python-dotenv==1.2.1
 python-multipart==0.0.20
 PyYAML==6.0.3
