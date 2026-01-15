@@ -12,7 +12,7 @@ from DataBase import session,get_session
 from sqlalchemy import select,update,desc
 from model import StatusEnum
 from email.utils import parsedate_to_datetime
-from datetime import timezone,datetime
+from datetime import timezone,datetime,timedelta
 from schemas import EmailMetaDataOut
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends,Request
@@ -30,6 +30,7 @@ from fastapi_sa_orm_filter.main import FilterCore
 from fastapi_sa_orm_filter.operators import Operators as ops
 
 from pwdlib import PasswordHash
+import jwt
 
 SQLAlchemyJobStoreURL=os.getenv("SQLAlchemyJobStore")
 
@@ -175,10 +176,10 @@ async def get_all_reports():
 # Query parameters will be like
 # For Example status__eq=incomplete&mail_from__like=%Abhishek%&received_at__between=2020-01-01,2020-01-01
 
-@app.get("/get-reports")
+@app.post("/get-reports")
 async def get_reports(
     objects_filter: str =Query(default=''),
-    db:AsyncSession=Depends(get_session)
+    db:AsyncSession=Depends(get_session),
 ) -> List[EmailMetaDataOut]:
     filter_result=FilterCore(model.email_metadata,my_objects_filter)
     query=filter_result.get_query(objects_filter)
@@ -188,10 +189,22 @@ async def get_reports(
 
 
 
-# @app.get("/fetch-mail-data")
+@app.post("/fetch-mail-data")
 async def get_mail(
-    imap_uid:str
-):
+    imap_uid:str,
+    request:Request
+):  
+    request=await request.json()
+    token=request['token']
+    try:
+        payload=jwt.decode(token,SECRET_KEY,algorithms=ALGORITHM)
+        username=payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401,detail="Incorrect credential")
+    except Exception as err:
+        print("Error authenticating user: ",err)
+        return {"Error":err}
+    print("Welcome, ",username)
     mail_data=mail.fetch(imap_uid,'RFC822')
     raw=mail_data[1][0][1]
     raw_message=email.message_from_bytes(raw)
@@ -249,7 +262,7 @@ async def create_user(request: Request):
     session.add(user)
     await session.commit()
     print("User Added to DB")
-    pass
+    return {"Status":200,"details":"User Added successfully"}
 
 @app.post("/login-user")
 async def login_user(request:Request):
@@ -260,12 +273,19 @@ async def login_user(request:Request):
         print("User doesn't exsist")
         return HTTPException(status_code=404,detail="User doesn't exsist")
     hashed_password= password_hash.hash(body['password'])
-    breakpoint()
-    if hashed_password!=result.password:
+    if password_hash.verify(body['password'],result.password)==False:
         print("Password Incorrect")
         return HTTPException(status_code=401,detail="Password Incorrect")
     
-    pass
+    access_token_expires=datetime.now(timezone.utc)+timedelta(minutes=3)
+    user={"sub":result.username}
+    user.update({"exp":access_token_expires})
+    encode_jwt_token=jwt.encode(user,SECRET_KEY,algorithm=ALGORITHM)
+    user=model.Token(token=encode_jwt_token,user_id=result.id)
+    session.add(user)
+    await session.commit()
+    print("Added to DB")
+    return {"Toke": encode_jwt_token,"Type":"Bearer"}
 
 
 
