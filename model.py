@@ -12,6 +12,8 @@ class StatusEnum(str, Enum):
     completed = "completed"
     incomplete = "incomplete"
     failed = "failed"
+    rejected = "rejected"
+    approved = "approved"
 
 
 class User(Base):
@@ -79,7 +81,7 @@ class email_attachments_metadata(Base):
     file_size=Column(BigInteger)
     cloudinary_reportUrl=Column(String)
     status: Mapped[StatusEnum]=mapped_column(default=StatusEnum.pending)
-    checksum_sha256: Mapped[str]=mapped_column()        
+    checksum_sha256: Mapped[str]=mapped_column()      
 
     def __repr__(self):
         return (

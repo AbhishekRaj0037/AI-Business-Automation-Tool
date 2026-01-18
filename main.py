@@ -288,6 +288,24 @@ async def login_user(request:Request):
     return {"Toke": encode_jwt_token,"Type":"Bearer"}
 
 
+@app.post("/update-report-status")
+async def update_report_status(request:Request):
+    body=await request.json()
+    report_id=body["report_id"]
+    report_status=StatusEnum[body["report_status"]]
+    report=update(model.email_attachments_metadata).where(model.email_attachments_metadata.id==int(report_id)).values(status=report_status)
+    await session.execute(report)
+    await session.commit()
+
+
+@app.post("/analyse-report")
+async def analyse_report(request:Request):
+    body=await request.json()
+    report_id=body["report_id"]
+
+    return 
+
+
 
 # try:
 #     job=scheduler.add_job(get_mail,trigger='interval',seconds=30,id="Call_Fetch_mail_with_the_id_28",kwargs={"imap_uid":"28"})
