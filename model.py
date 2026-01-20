@@ -1,8 +1,7 @@
-
 from sqlalchemy import Column,Integer,String,Boolean,ForeignKey,DateTime,BigInteger
-from sqlalchemy.ext.asyncio import AsyncEngine
-from enum import Enum
 from sqlalchemy.orm import declarative_base,mapped_column,Mapped
+from enum import Enum
+
 Base=declarative_base()
 
 class StatusEnum(str, Enum):
@@ -58,10 +57,7 @@ class email_metadata(Base):
     mail_from=Column(String,nullable=False)
     received_at = mapped_column(DateTime,nullable=False)
     status:Mapped[StatusEnum]=mapped_column(default=StatusEnum.incomplete)
-    # total_pdfs=Column(Integer)
-    # processed_pdfs=Column(Integer,default=0)
     
-
     def __repr__(self):
         return (
             f"<email_metadata("

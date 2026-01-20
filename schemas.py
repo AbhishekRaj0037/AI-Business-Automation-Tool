@@ -1,6 +1,6 @@
-from pydantic import ConfigDict, BaseModel, Field
+from pydantic import ConfigDict, BaseModel
 from model import StatusEnum
-from datetime import date,datetime
+from datetime import datetime
 
 class EmailMetaDataOut(BaseModel):
     status: StatusEnum
