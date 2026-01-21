@@ -287,7 +287,6 @@ async def analyse_report(request:Request):
         search_type="similarity",
         search_kwargs={"k":5}
     )
-    breakpoint()
     qa_chain=RetrievalQA.from_chain_type(
     llm=llm,
     chain_type="stuff",
