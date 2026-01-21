@@ -15,8 +15,8 @@ from FileUpload import cloudinary
 from model import StatusEnum
 from schemas import EmailMetaDataOut
 from pwdlib import PasswordHash
-from typing import List
 import cloudinary.uploader
+from typing import List
 import hashlib
 import imaplib
 import model
@@ -24,12 +24,13 @@ import email
 import jwt
 import os
 
-import langchain_community.document_loaders as docloader
 from langchain_classic.text_splitter import RecursiveCharacterTextSplitter
-from langchain_classic.embeddings import OpenAIEmbeddings
+import langchain_community.document_loaders as docloader
+from langchain_openai import AzureOpenAIEmbeddings
 from langchain_classic.vectorstores import FAISS
+from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 from langchain_openai import OpenAI
-from langchain_classic.chains import retrieval_qa
+from langchain_openai import AzureOpenAI
 
 
 
@@ -56,9 +57,21 @@ REFRESH_TOKEN_EXPIRE_MINUTES=30*60
 
 password_hash=PasswordHash.recommended()
 
-llm=OpenAI(openai_api_key=openai_api_key)
+llm= AzureOpenAI(
+    api_version="2024-02-01",
+    azure_endpoint="https://azure-open-ai-business-automation-tool.openai.azure.com/",
+    api_key=openai_api_key,
+    azure_deployment="text-embedding-3-large"
+)
+
 splitter=RecursiveCharacterTextSplitter(chunk_size=500,chunk_overlap=50)
-embeddings=OpenAIEmbeddings()
+
+embeddings=AzureOpenAIEmbeddings(
+    api_version="2024-02-01",
+    azure_endpoint="https://azure-open-ai-business-automation-tool.openai.azure.com/",
+    api_key=openai_api_key,
+    azure_deployment="text-embedding-3-large"
+)
 
 my_objects_filter={
     'status': [ops.eq, ops.in_],
@@ -274,7 +287,8 @@ async def analyse_report(request:Request):
         search_type="similarity",
         search_kwargs={"k":5}
     )
-    qa_chain=retrieval_qa(
+    breakpoint()
+    qa_chain=RetrievalQA.from_chain_type(
     llm=llm,
     chain_type="stuff",
     retriever=retriever
