@@ -30,14 +30,15 @@ from langchain_openai import AzureOpenAIEmbeddings
 from langchain_classic.vectorstores import FAISS
 from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 from langchain_openai import OpenAI
-from langchain_openai import AzureOpenAI
+from langchain_openai import AzureChatOpenAI
 
 
 
 
 SQLAlchemyJobStoreURL=os.getenv("SQLAlchemyJobStore")
 file_download_path=os.getenv("file_download_path")
-openai_api_key=os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
+
 JWT_SECRET_KEY=os.getenv("JWT_SECRET_KEY")
 imap_server=os.getenv("imap_server")
 username=os.getenv("username")
@@ -57,11 +58,13 @@ REFRESH_TOKEN_EXPIRE_MINUTES=30*60
 
 password_hash=PasswordHash.recommended()
 
-llm= AzureOpenAI(
-    api_version="2024-02-01",
+VECTOR_DB=os.getenv("VECTOR_DB")
+
+llm= AzureChatOpenAI(
+    api_version="2024-12-01-preview",
     azure_endpoint="https://azure-open-ai-business-automation-tool.openai.azure.com/",
-    api_key=openai_api_key,
-    azure_deployment="text-embedding-3-large"
+    api_key=OPENAI_API_KEY,
+    azure_deployment="gpt-4.1-mini"
 )
 
 splitter=RecursiveCharacterTextSplitter(chunk_size=500,chunk_overlap=50)
@@ -69,9 +72,10 @@ splitter=RecursiveCharacterTextSplitter(chunk_size=500,chunk_overlap=50)
 embeddings=AzureOpenAIEmbeddings(
     api_version="2024-02-01",
     azure_endpoint="https://azure-open-ai-business-automation-tool.openai.azure.com/",
-    api_key=openai_api_key,
-    azure_deployment="text-embedding-3-large"
+    api_key=OPENAI_API_KEY,
+    azure_deployment="text-embedding-3-small"
 )
+
 
 my_objects_filter={
     'status': [ops.eq, ops.in_],
@@ -279,11 +283,41 @@ async def update_report_status(request:Request):
 async def analyse_report(request:Request):
     body=await request.json()
     report_id=body["report_id"]
-    loader=docloader.PyPDFLoader("Order_ID_7690337666.pdf")
+    loader=docloader.PyPDFLoader("taco_1078712120200002_9dee63ca-2743-46f5-8631-8fb85092ed2d.pdf")
     loaded_doc=loader.load()
     doc_chunks=splitter.split_documents(loaded_doc)
-    vector_store=FAISS.from_documents(doc_chunks,embeddings)
-    retriever=vector_store.as_retriever(
+    if os.path.exists(VECTOR_DB):
+        vectorstore=FAISS.load_local(
+            VECTOR_DB,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+        print("Loaded existing vector DB!")
+        vectorstore.add_documents(doc_chunks)
+        vectorstore.save_local(VECTOR_DB)
+        print("Updated vector DB!")
+    else:
+        vectorstore = FAISS.from_documents(doc_chunks, embeddings)
+        vectorstore.save_local(VECTOR_DB)
+        print("Created new vector DB!")
+
+    return {"Done analysing file!"}
+
+
+@app.post("/query-document")
+async def search_document(request:Request):
+    body=await request.json()
+    if os.path.exists(VECTOR_DB):
+        vectorstore=FAISS.load_local(
+            VECTOR_DB,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+        print("Loaded existing vector DB!")
+    else:
+        print("No files to query!")
+        return 
+    retriever=vectorstore.as_retriever(
         search_type="similarity",
         search_kwargs={"k":5}
     )
@@ -296,11 +330,5 @@ async def analyse_report(request:Request):
     response=qa_chain.invoke({"query":query})
     print(response)
     return {"response":response}
-
-
-@app.post("/query-document")
-async def search_document(request:Request):
-    body=await request.json()
-    pass
 
 
