@@ -282,7 +282,7 @@ async def update_report_status(request:Request):
 @app.get("/analyse-report")
 async def analyse_report():
     # report_id=body["report_id"]
-    loader=docloader.PyPDFLoader("Order_ID_7690337666.pdf")
+    loader=docloader.PyPDFLoader("Policy-P000188666627.pdf")
     loaded_doc=loader.load()
     doc_chunks=splitter.split_documents(loaded_doc)
     if os.path.exists(VECTOR_DB):
