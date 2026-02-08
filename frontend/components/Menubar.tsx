@@ -30,11 +30,6 @@ const menuItems = [
         label: "Schedules",
         href: "/schedules",
       },
-      {
-        icon: "/settings-icon.png",
-        label: "Settings",
-        href: "/settings",
-      },
     ],
   },
   {
@@ -45,6 +40,11 @@ const menuItems = [
         label: "Dashboard-update",
         href: "/",
       },
+      {
+        icon: "/settings-icon.png",
+        label: "Settings",
+        href: "/settings",
+      },
     ],
   },
 ];
@@ -54,9 +54,6 @@ const Menubar = () => {
     <div className="mt-4 text-sm">
       {menuItems.map((i) => (
         <div className="flex flex-col gap-2" key={i.title}>
-          <span className="hidden lg:block text-gray-400 font-light my-4">
-            {i.title}
-          </span>
           {i.items.map((item) => {
             return (
               <Link
@@ -71,6 +68,32 @@ const Menubar = () => {
           })}
         </div>
       ))}
+      <div className="box">
+        <h4>Dashboard Update</h4>
+
+        <label className="radio">
+          <input type="radio" name="update" checked />
+          <span className="custom-radio"></span>
+          Today – 6:00 PM
+        </label>
+
+        <label className="radio">
+          <input type="radio" name="update" />
+          <span className="custom-radio"></span>
+          Every 6 hours
+        </label>
+
+        <a href="#" className="change-link">
+          Change schedule
+        </a>
+      </div>
+      <div className="user">
+        <img src="https://i.pravatar.cc/40" />
+        <div>
+          <strong>John Doe</strong>
+          <p>john.doe@example.com</p>
+        </div>
+      </div>
     </div>
   );
 };
