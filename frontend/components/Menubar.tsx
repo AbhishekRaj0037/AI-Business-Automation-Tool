@@ -68,26 +68,27 @@ const Menubar = () => {
           })}
         </div>
       ))}
-      <div className="box">
+      <div className="box text-gray-700">
         <h4>Dashboard Update</h4>
-
-        <label className="radio">
-          <input type="radio" name="update" checked />
-          <span className="custom-radio"></span>
-          Today – 6:00 PM
-        </label>
-
-        <label className="radio">
-          <input type="radio" name="update" />
-          <span className="custom-radio"></span>
-          Every 6 hours
-        </label>
-
-        <a href="#" className="change-link">
-          Change schedule
-        </a>
+        <div>
+          <label className="radio">
+            <input type="radio" name="update" checked />
+            <span className="custom-radio"></span>
+            Today – 6:00 PM
+          </label>
+        </div>
+        <div>
+          <label className="radio">
+            <input type="radio" name="update" />
+            <span className="custom-radio"></span>
+            Every 6 hours
+          </label>
+        </div>
+        <div className="pt-2 text-blue-400">
+          <Link href="/change-schedule">Change schedule</Link>
+        </div>
       </div>
-      <div className="user">
+      <div className="user text-gray-500">
         <img src="https://i.pravatar.cc/40" />
         <div>
           <strong>John Doe</strong>
