@@ -35,11 +35,10 @@ body {
 }
 
 .user {
-  border: 2px solid #d1d5db;
-  margin-top: auto;
   display: flex;
   align-items: center;
   gap: 10px;
+  padding-left: 5px;
 }
 
 .user img {

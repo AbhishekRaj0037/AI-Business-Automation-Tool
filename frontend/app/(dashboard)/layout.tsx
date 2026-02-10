@@ -9,11 +9,13 @@ export default function DashboardLayout({
 }>) {
   return (
     <div className="h-screen flex">
-      <div className="w-[14%] md:w-[8%] lg:w-[16%] xl:w-[14%] bg-gray-200">
+      <aside className="w-64 border-r">
         <Menubar />
-      </div>
+      </aside>
 
-      {children}
+      <main className="flex-1 flex justify-center overflow-y-auto p-6">
+        <div className="w-full max-w-6xl">{children}</div>
+      </main>
     </div>
   );
 }

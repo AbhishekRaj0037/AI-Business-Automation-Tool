@@ -36,11 +36,6 @@ const menuItems = [
     title: "Dashboard-update-status",
     items: [
       {
-        icon: "/refresh-icon.png",
-        label: "Dashboard-update",
-        href: "/",
-      },
-      {
         icon: "/settings-icon.png",
         label: "Settings",
         href: "/settings",
@@ -68,8 +63,13 @@ const Menubar = () => {
           })}
         </div>
       ))}
-      <div className="box text-gray-700">
-        <h4>Dashboard Update</h4>
+      <div className="hidden lg:block box text-gray-700">
+        <h4>
+          <span className="inline-flex gap-1">
+            <Image src="/refresh-icon.png" alt="" width={20} height={20} />
+            Dashboard Update
+          </span>
+        </h4>
         <div>
           <label className="radio">
             <input type="radio" name="update" checked />
@@ -88,11 +88,14 @@ const Menubar = () => {
           <Link href="/change-schedule">Change schedule</Link>
         </div>
       </div>
-      <div className="user text-gray-500">
-        <img src="https://i.pravatar.cc/40" />
-        <div>
+      <div className="mt-auto flex items-center gap-2 px-2 text-gray-500">
+        <img
+          src="https://i.pravatar.cc/40"
+          className="w-10 h-10 rounded-full"
+        />
+        <div className="hidden lg:block">
           <strong>John Doe</strong>
-          <p>john.doe@example.com</p>
+          <p className="text-xs">john.doe@example.com</p>
         </div>
       </div>
     </div>
