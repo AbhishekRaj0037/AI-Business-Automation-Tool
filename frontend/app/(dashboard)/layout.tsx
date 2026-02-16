@@ -8,13 +8,10 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div className="h-screen flex">
-      <aside className="w-64 border-r">
-        <Menubar />
-      </aside>
-
-      <main className="flex-1 flex justify-center overflow-y-auto p-6">
-        <div className="w-full max-w-6xl">{children}</div>
+    <div className="flex min-h-screen">
+      <Menubar />
+      <main className="flex-1 flex justify-center item-center">
+        <div className="w-full max-w-4xl">{children}</div>
       </main>
     </div>
   );
