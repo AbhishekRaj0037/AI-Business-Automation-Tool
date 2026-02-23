@@ -13,7 +13,7 @@ const menuItems = [
       {
         icon: "/home-icon.png",
         label: "Home",
-        href: "/",
+        href: "/home",
       },
       {
         icon: "/report-icon.png",
@@ -21,14 +21,9 @@ const menuItems = [
         href: "/reports",
       },
       {
-        icon: "/email-icon.png",
-        label: "Emails",
-        href: "/emails",
-      },
-      {
         icon: "/generate-icon.png",
-        label: "AI Analysis",
-        href: "/ai-analysis",
+        label: "Email AI Analysis",
+        href: "/email-ai-analysis",
       },
       {
         icon: "/schedule-icon.png",
@@ -52,12 +47,14 @@ const menuItems = [
 const Menubar = () => {
   const [isOpen, setIsOpen] = useState(false);
   return (
-    <div className="mt-4 text-sm">
+    <div className=" text-sm">
       <div className="md:hidden flex items-center justify-between p-4 border-b">
-        <button onClick={() => setIsOpen(true)}>
+        <button
+          onClick={() => setIsOpen(true)}
+          className="text-black p-2 rounded-lg hover:bg-blue-700 transition duration-200"
+        >
           <Menu size={24} />
         </button>
-        <h1 className="font-semibold">Dashboard</h1>
       </div>
       {isOpen && (
         <div
@@ -78,8 +75,9 @@ const Menubar = () => {
             <X size={24} />
           </button>
         </div>
+        <div className="pt-6"></div>
         {menuItems.map((i) => (
-          <div className="flex-col" key={i.title}>
+          <div className="flex-col pt-2" key={i.title}>
             {i.items.map((item) => {
               return (
                 <Link
@@ -94,6 +92,7 @@ const Menubar = () => {
             })}
           </div>
         ))}
+        <div className="pt-10"></div>
         <div className="box text-gray-700">
           <h4>
             <span className="inline-flex gap-1">
@@ -119,7 +118,7 @@ const Menubar = () => {
             <Link href="/change-schedule">Change schedule</Link>
           </div>
         </div>
-        <div className="mt-auto flex items-center gap-2 px-2 text-gray-500">
+        <div className="mt-auto flex items-center gap-2 px-2 text-gray-500 pt-19 pl-8">
           <img
             src="https://i.pravatar.cc/40"
             className="w-10 h-10 rounded-full"

@@ -9,7 +9,7 @@ const DashboardPage = () => {
       <div className="text-black text-l pl-12 pt-4">
         Real-time visibility into inbox activity and AI workload
       </div>
-      <div className="flex pl-12 gap-4 pt-5 ">
+      <div className="flex pl-12 gap-4 pt-5 mb-2">
         <div className="rounded-md bg-blue-100 p-4 text-black w-64 h-35">
           <Image src="/email.png" alt="" width={40} height={40} />
           <div>Email Fetched Today</div>
@@ -36,8 +36,8 @@ const DashboardPage = () => {
           <div>In queue</div>
         </div>
       </div>
-      <div className="pl-12">
-        <div className="border text-black border-gray-300 h-20 rounded-md">
+      <div className="pl-12 mb-2">
+        <div className="border text-black border-gray-300 h-20 rounded-md mr-12">
           <span className="text-2xl pl-2">Recent Reports</span>
           <span className="pl-100">
             <Link
@@ -73,7 +73,7 @@ const DashboardPage = () => {
       </div>
       <div className="flex text-black pl-12 gap-5">
         <div className="border w-97 rounded-md">
-          <div className="text-gray-500 border">Recent Reports</div>
+          <div className="text-gray-500 border text-center">Recent Reports</div>
           <div className="text-sm text-gray-500">Today 1:00 PM</div>
           <div>Daily Email Summary</div>
           <div className="text-gray-500">
@@ -81,7 +81,9 @@ const DashboardPage = () => {
           </div>
         </div>
         <div className="border w-97 rounded-md">
-          <div className="text-gray-500 border">Upcoming Schedule</div>
+          <div className="text-gray-500 border text-center">
+            Upcoming Schedule
+          </div>
           <div className="text-sm text-gray-500">Today 06:00 PM</div>
           <div>Generate daily email summary</div>
           <div className="text-gray-500">
