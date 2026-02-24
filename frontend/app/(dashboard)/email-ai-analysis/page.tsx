@@ -1,7 +1,21 @@
 import Image from "next/image";
 import Link from "next/link";
 
-const DashboardPage = () => {
+async function getMails() {
+  const res = await fetch("http://127.0.0.1:8000/get-all-reports", {
+    cache: "no-store", // disable caching (optional)
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch data");
+  }
+
+  return res.json();
+}
+
+const DashboardPage = async () => {
+  const mails = await getMails();
+
   return (
     <div>
       <div className="text-black text-3xl pt-12">Emails - Inbox</div>
@@ -94,35 +108,22 @@ const DashboardPage = () => {
           </tr>
         </thead>
         <tbody>
-          <tr className="border-t">
-            <td className="border px-4 py-2 text-green-600">Analyzed</td>
-            <td className="border px-4 py-2">Project Update</td>
-            <td className="border px-4 py-2">Rahul Sharma</td>
-            <td className="border px-4 py-2">Today 3:45 PM</td>
-            <th className="border px-4 py-2">
-              <a
-                href="/report/1"
-                className="text-blue-600 hover:underline text-center"
-              >
-                View Mail
-              </a>
-            </th>
-          </tr>
-
-          <tr className="border-t">
-            <td className="border px-4 py-2 text-yellow-600">Pending</td>
-            <td className="border px-4 py-2">Invoice Attached</td>
-            <td className="border px-4 py-2">Accounts Team</td>
-            <td className="border px-4 py-2">Today 1:20 PM</td>
-            <th className="border px-4 py-2">
-              <a
-                href="/report/1"
-                className="text-blue-600 hover:underline text-center"
-              >
-                View Mail
-              </a>
-            </th>
-          </tr>
+          {mails.map((mail: any) => (
+            <tr className="border-t">
+              <td className="border px-4 py-2 text-green-600">{mail.status}</td>
+              <td className="border px-4 py-2">{mail.subject}</td>
+              <td className="border px-4 py-2">{mail.mail_from}</td>
+              <td className="border px-4 py-2">{mail.received_at}</td>
+              <th className="border px-4 py-2">
+                <a
+                  href="/report/1"
+                  className="text-blue-600 hover:underline text-center"
+                >
+                  View Mail
+                </a>
+              </th>
+            </tr>
+          ))}
         </tbody>
       </table>
       <div className="flex items-center justify-between px-6 py-4 border-t rounded-b-xl text-black">

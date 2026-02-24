@@ -127,9 +127,9 @@ async def read_root():
     starting_uid_range=0
     if result is not None:
          starting_uid_range=result.imap_uid
-         uids=mail.uid('search', None, f'UID {starting_uid_range + 1}:*')
-    uids=uids[0].decode('utf-8')
-    uid_list=uids.split()
+    uids=mail.uid('search', None, f'UID {starting_uid_range + 1}:*')
+    # uids=uids[0].decode('utf-8')
+    uid_list=uids[1][0].split()
     for uid in uid_list:
         mail_data=mail.fetch(uid,'RFC822')
         raw=mail_data[1][0][1]
@@ -153,7 +153,7 @@ async def read_root():
 async def get_all_reports():
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)))
     result=result.scalars().all()
-    pass
+    return result
    
 
 
