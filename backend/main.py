@@ -21,6 +21,7 @@ import hashlib
 import imaplib
 import model
 import email
+import redis
 import jwt
 import os
 
@@ -31,7 +32,6 @@ from langchain_classic.vectorstores import FAISS
 from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 from langchain_openai import OpenAI
 from langchain_openai import AzureChatOpenAI
-
 
 
 
@@ -59,6 +59,10 @@ REFRESH_TOKEN_EXPIRE_MINUTES=30*60
 password_hash=PasswordHash.recommended()
 
 VECTOR_DB=os.getenv("VECTOR_DB")
+r=redis.Redis(host='localhost',port=6379)
+
+
+r.set('foo','bar')
 
 llm= AzureChatOpenAI(
     api_version="2024-12-01-preview",
