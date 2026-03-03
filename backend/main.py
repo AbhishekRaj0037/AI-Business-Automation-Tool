@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI,Query,HTTPException,Depends,Request
+from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket
 from fastapi_sa_orm_filter.operators import Operators as ops
 from fastapi_sa_orm_filter.main import FilterCore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -12,6 +12,8 @@ from sqlalchemy import select,update,desc
 from email.utils import parsedate_to_datetime
 from DataBase import session,get_session
 from FileUpload import cloudinary
+import websocket_dashboard
+from websocket_dashboard import ConnectionManager,update_user_dashboard,r
 from model import StatusEnum
 from schemas import EmailMetaDataOut
 from pwdlib import PasswordHash
@@ -22,6 +24,8 @@ import imaplib
 import model
 import email
 import redis
+import json
+import asyncio
 import jwt
 import os
 
@@ -32,7 +36,6 @@ from langchain_classic.vectorstores import FAISS
 from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 from langchain_openai import OpenAI
 from langchain_openai import AzureChatOpenAI
-
 
 
 SQLAlchemyJobStoreURL=os.getenv("SQLAlchemyJobStore")
@@ -47,6 +50,8 @@ password=os.getenv("password")
 
 app=FastAPI()
 
+manager=ConnectionManager()
+
 mail= imaplib.IMAP4_SSL(imap_server)
 mail.login(username,password)
 mail.select("inbox")
@@ -59,10 +64,8 @@ REFRESH_TOKEN_EXPIRE_MINUTES=30*60
 password_hash=PasswordHash.recommended()
 
 VECTOR_DB=os.getenv("VECTOR_DB")
-r=redis.Redis(host='localhost',port=6379)
 
 
-r.set('foo','bar')
 
 llm= AzureChatOpenAI(
     api_version="2024-12-01-preview",
@@ -102,12 +105,39 @@ job_defaults={
 
 scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=job_defaults)
 
+async def get_dashboard_stats(username: str):
+    queue_key = f"user:{username}:queue"
+    stats_key = f"user:{username}:stats"
+
+    queue = await redis.hgetall(queue_key)
+    stats = await redis.hgetall(stats_key)
+
+    return {
+        "queue": queue,
+        "stats": stats
+    }
+
+async def redis_listener():
+    pubsub =r.pubsub()
+    await pubsub.psubscribe("user:*:updates")
+
+    async for message in pubsub.listen():
+        if message["type"] == "pmessage":
+            data = json.loads(message["data"])
+            username = data["username"]
+
+            # fetch latest stats from Redis
+            stats = await get_dashboard_stats(username)
+
+            # push to correct websocket user
+            await manager.send(username, stats)
 
 @app.on_event("startup")
 def on_start():
     try:
         scheduler.start()
         print("Started scheduler successfully")
+        asyncio.create_task(redis_listener())
     except Exception as err:
         print("Scheduler giving error: ", err)
 
@@ -124,8 +154,19 @@ def checksum_from_part(part, algo="sha256", chunk_size=8192):
     return hasher.hexdigest()
 
 
-@app.get("/")
-async def read_root():
+@app.post("/")
+async def read_root(request:Request):
+    body=await request.json()
+    token=body.get("token")
+    try:
+        payload=jwt.decode(token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        username=payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401,detail="Incorrect credential")
+    except Exception as err:
+        print("Error authenticating user: ",err)
+        return {"Error":err}
+    print("Welcome ",username)
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)).limit(1))
     result=result.scalars().first()
     starting_uid_range=0
@@ -150,6 +191,9 @@ async def read_root():
             report_data=model.email_metadata(imap_uid=int(uid),mail_from=mail_from,subject=subject,received_at=received_at)
             session.add(report_data)
             await session.commit()
+            await update_user_dashboard(username,stats_changes={
+                "fetch_today":1
+            })
             print("Added to DB")
 
 
@@ -191,6 +235,7 @@ async def get_mail(
         print("Error authenticating user: ",err)
         return {"Error":err}
     print("Welcome, ",username)
+    breakpoint()
     mail_data=mail.fetch(imap_uid,'RFC822')
     raw=mail_data[1][0][1]
     raw_message=email.message_from_bytes(raw)
@@ -333,5 +378,28 @@ async def search_document(request:Request):
     response=qa_chain.invoke({"query":query})
     print(response)
     return {"response":response}
+
+
+
+@app.websocket("/ws/dashboard")
+async def dashboard_ws(websocket:WebSocket):
+    token=websocket.query_params.get("token")
+    try:
+        payload=jwt.decode(token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        username=payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401,detail="Incorrect credential")
+    except Exception as err:
+        print("Error authenticating user: ",err)
+        return {"Error":err}
+    print("Welcome ",username)
+    await manager.connect(username,websocket)
+    try: 
+        while True:
+            await websocket.receive_text()
+    except:
+        manager.disconnect(username)
+
+    
 
 
