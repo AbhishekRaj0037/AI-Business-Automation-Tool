@@ -1,9 +1,9 @@
 from fastapi import WebSocket
-import redis
+import redis.asyncio as redis
 import json
 from datetime import date
 
-r=redis.Redis(host='localhost',port=6379)
+r=redis.Redis(host='localhost',port=6379,decode_responses=True)
 
 class ConnectionManager:
     def __init__(self):
@@ -20,9 +20,11 @@ class ConnectionManager:
             self.active_connections[username].remove(websocket)
 
     async def send(self, username: str, data: dict):
+        
         if username in self.active_connections:
+          
             for ws in self.active_connections[username]:
-                await ws.send_json(data)
+                await ws.send_json({'username':username,'data':data})
 
 
 
@@ -51,7 +53,7 @@ async def update_user_dashboard(
         await r.expire(stats_key, 172800)
 
     # 🔹 Publish update event
-    await redis.Redis.publish(
+    await r.publish(
         f"user:{username}:updates",
         json.dumps({"username": username})
     )

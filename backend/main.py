@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket
+from websocket_dashboard import ConnectionManager,update_user_dashboard,r
 from fastapi_sa_orm_filter.operators import Operators as ops
 from fastapi_sa_orm_filter.main import FilterCore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -13,17 +14,17 @@ from email.utils import parsedate_to_datetime
 from DataBase import session,get_session
 from FileUpload import cloudinary
 import websocket_dashboard
-from websocket_dashboard import ConnectionManager,update_user_dashboard,r
 from model import StatusEnum
 from schemas import EmailMetaDataOut
 from pwdlib import PasswordHash
+from datetime import date
 import cloudinary.uploader
 from typing import List
+
 import hashlib
 import imaplib
 import model
 import email
-import redis
 import json
 import asyncio
 import jwt
@@ -106,11 +107,12 @@ job_defaults={
 scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=job_defaults)
 
 async def get_dashboard_stats(username: str):
-    queue_key = f"user:{username}:queue"
-    stats_key = f"user:{username}:stats"
+    today = date.today().isoformat()
+    queue_key = f"user:{username}:queue:{today}"
+    stats_key = f"user:{username}:stats:{today}"
 
-    queue = await redis.hgetall(queue_key)
-    stats = await redis.hgetall(stats_key)
+    queue = await websocket_dashboard.r.hgetall(queue_key)
+    stats = await websocket_dashboard.r.hgetall(stats_key)
 
     return {
         "queue": queue,
@@ -125,12 +127,13 @@ async def redis_listener():
         if message["type"] == "pmessage":
             data = json.loads(message["data"])
             username = data["username"]
-
+        
             # fetch latest stats from Redis
             stats = await get_dashboard_stats(username)
-
+            
             # push to correct websocket user
             await manager.send(username, stats)
+            
 
 @app.on_event("startup")
 def on_start():
@@ -235,7 +238,6 @@ async def get_mail(
         print("Error authenticating user: ",err)
         return {"Error":err}
     print("Welcome, ",username)
-    breakpoint()
     mail_data=mail.fetch(imap_uid,'RFC822')
     raw=mail_data[1][0][1]
     raw_message=email.message_from_bytes(raw)
