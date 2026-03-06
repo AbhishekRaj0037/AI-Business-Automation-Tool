@@ -1,6 +1,50 @@
+"use client";
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+
+type DashboardStats = {
+  username: string;
+  data: {
+    queue: {
+      pending: number;
+      processing: number;
+      completed: number;
+      failed: number;
+    };
+    stats: {
+      fetch_today: number;
+      ai_processed_today: number;
+    };
+  };
+};
+
 const DashboardPage = () => {
+  const [websocket_incoming_data, setStats] = useState<DashboardStats | null>(
+    null,
+  );
+  useEffect(() => {
+    console.log("Use effect running");
+    const token =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhYmhpc2hlazAwMzdAZXhhbXBsZS5jb20iLCJleHAiOjE3NzI3OTU4MzR9.aPjA_9x89clAkWr55dKuH6yO57AXsVHxYYlzDG4-q90";
+    const ws = new WebSocket(`ws://localhost:8000/ws/dashboard?token=${token}`);
+    ws.onopen = () => {
+      console.log("WebSocket connected successfully");
+    };
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log("Received websocket data:", data);
+
+      setStats(data);
+    };
+    ws.onerror = (err) => {
+      console.log("WebSocket error", err);
+    };
+    ws.onclose = () => {
+      console.log("WebSocket closed");
+    };
+    return () => ws.close();
+  }, []);
   return (
     <div>
       <div className="text-black text-3xl pl-12 pt-12">
@@ -13,9 +57,8 @@ const DashboardPage = () => {
         <div className="rounded-md bg-blue-100 p-4 text-black w-64 h-35">
           <Image src="/email.png" alt="" width={40} height={40} />
           <div>Email Fetched Today</div>
-          <div className="text-3xl">128</div>
-          <div>
-            <span className="text-green-600">+12%</span> vs yesterday
+          <div className="text-3xl">
+            {websocket_incoming_data?.data?.stats?.fetch_today}
           </div>
         </div>
         <div className="rounded-md bg-blue-100  p-4 text-black w-64 h-35">
@@ -25,15 +68,18 @@ const DashboardPage = () => {
             width={40}
             height={40}
           />
-          <div>Sent to AI Analysis</div>
-          <div className="text-3xl">94</div>
-          <div>73% processed</div>
+          <div>AI Analysis Done Today</div>
+          <div className="text-3xl">
+            {websocket_incoming_data?.data?.queue?.completed}
+          </div>
         </div>
         <div className="rounded-md bg-blue-100  p-4 text-black w-64 h-35">
           <Image src="/sand-clock.png" alt="" width={40} height={40} />
           <div>Pending Analysis</div>
-          <div className="text-3xl">34</div>
-          <div>In queue</div>
+          <div className="text-3xl">
+            {websocket_incoming_data?.data?.queue?.pending}
+          </div>
+          <div>In Queue</div>
         </div>
       </div>
       <div className="pl-12 mb-2">

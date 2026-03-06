@@ -108,7 +108,7 @@ scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=
 
 async def get_dashboard_stats(username: str):
     today = date.today().isoformat()
-    queue_key = f"user:{username}:queue:{today}"
+    queue_key = f"user:{username}:queue"
     stats_key = f"user:{username}:stats:{today}"
 
     queue = await websocket_dashboard.r.hgetall(queue_key)
@@ -127,7 +127,7 @@ async def redis_listener():
         if message["type"] == "pmessage":
             data = json.loads(message["data"])
             username = data["username"]
-        
+            
             # fetch latest stats from Redis
             stats = await get_dashboard_stats(username)
             
@@ -276,9 +276,6 @@ async def get_mail(
     if is_uid_already_present.status==StatusEnum.completed:
         print("Triggered:      ",is_uid_already_present)
         return
-
-
-    
     return
 
 
@@ -330,27 +327,50 @@ async def update_report_status(request:Request):
     await session.commit()
 
 
-@app.get("/analyse-report")
-async def analyse_report():
+@app.post("/analyse-report")
+async def analyse_report(request:Request):
+    body=await request.json()
+    token=body.get("token")
+    try:
+        payload=jwt.decode(token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        username=payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401,detail="Incorrect credential")
+    except Exception as err:
+        print("Error authenticating user: ",err)
+        return {"Error":err}
+    print("Welcome ",username)
     # report_id=body["report_id"]
-    loader=docloader.PyPDFLoader("Policy-P000188666627.pdf")
-    loaded_doc=loader.load()
-    doc_chunks=splitter.split_documents(loaded_doc)
-    if os.path.exists(VECTOR_DB):
-        vectorstore=FAISS.load_local(
-            VECTOR_DB,
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
-        print("Loaded existing vector DB!")
-        vectorstore.add_documents(doc_chunks)
-        vectorstore.save_local(VECTOR_DB)
-        print("Updated vector DB!")
-    else:
-        vectorstore = FAISS.from_documents(doc_chunks, embeddings)
-        vectorstore.save_local(VECTOR_DB)
-        print("Created new vector DB!")
-
+    try:
+        await update_user_dashboard(username,queue_changes={
+                    "pending":1,
+                })
+        loader=docloader.PyPDFLoader("Policy-P000188666627.pdf")
+        loaded_doc=loader.load()
+        doc_chunks=splitter.split_documents(loaded_doc)
+        if os.path.exists(VECTOR_DB):
+            vectorstore=FAISS.load_local(
+                VECTOR_DB,
+                embeddings,
+                allow_dangerous_deserialization=True
+            )
+            print("Loaded existing vector DB!")
+            vectorstore.add_documents(doc_chunks)
+            vectorstore.save_local(VECTOR_DB)
+            print("Updated vector DB!")
+        else:
+            vectorstore = FAISS.from_documents(doc_chunks, embeddings)
+            vectorstore.save_local(VECTOR_DB)
+            print("Created new vector DB!")
+        await update_user_dashboard(username,stats_changes={
+                    "completed":1,
+                    "pending":-1
+                })
+    except Exception as err:
+        await update_user_dashboard(username,queue_changes={
+                    "pending":-1,
+                })
+        return {"Error ",err}
     return {"Done analysing file!"}
 
 
@@ -396,12 +416,12 @@ async def dashboard_ws(websocket:WebSocket):
         return {"Error":err}
     print("Welcome ",username)
     await manager.connect(username,websocket)
+    data=await get_dashboard_stats(username)
+    await websocket.send_json({
+        'username':username,'data':data
+    })
     try: 
         while True:
             await websocket.receive_text()
     except:
         manager.disconnect(username)
-
-    
-
-

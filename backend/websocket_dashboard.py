@@ -22,7 +22,7 @@ class ConnectionManager:
     async def send(self, username: str, data: dict):
         
         if username in self.active_connections:
-          
+    
             for ws in self.active_connections[username]:
                 await ws.send_json({'username':username,'data':data})
 
