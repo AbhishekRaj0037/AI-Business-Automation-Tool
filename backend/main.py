@@ -1,8 +1,9 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket
+from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket,Response
 from websocket_dashboard import ConnectionManager,update_user_dashboard,r
 from fastapi_sa_orm_filter.operators import Operators as ops
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi_sa_orm_filter.main import FilterCore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -50,6 +51,14 @@ password=os.getenv("password")
 
 
 app=FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 manager=ConnectionManager()
 
@@ -157,10 +166,12 @@ def checksum_from_part(part, algo="sha256", chunk_size=8192):
     return hasher.hexdigest()
 
 
-@app.post("/")
+@app.get("/")
 async def read_root(request:Request):
-    body=await request.json()
-    token=body.get("token")
+    token=request.cookies.get("jwt_token")
+
+    if not token:
+        raise HTTPException(status_code=401,detail="Not authenticated")
     try:
         payload=jwt.decode(token,JWT_SECRET_KEY,algorithms=ALGORITHM)
         username=payload.get("sub")
@@ -295,16 +306,17 @@ async def create_user(request: Request):
     return {"Status":200,"details":"User Added successfully"}
 
 @app.post("/login-user")
-async def login_user(request:Request):
+async def login_user(request:Request,response:Response):
     body=await request.json()
     result=await session.execute(select(model.User).where(model.User.email==body['email']))
     result=result.scalars().first()
-    if result == []:
+    breakpoint()
+    if result is None:
         print("User doesn't exsist")
-        return HTTPException(status_code=404,detail="User doesn't exsist")
+        raise HTTPException(status_code=404,detail="User doesn't exsist")
     if password_hash.verify(body['password'],result.password)==False:
         print("Password Incorrect")
-        return HTTPException(status_code=401,detail="Password Incorrect")
+        raise HTTPException(status_code=401,detail="Password Incorrect")
     
     access_token_expires=datetime.now(timezone.utc)+timedelta(minutes=3)
     user={"sub":result.username}
@@ -313,8 +325,16 @@ async def login_user(request:Request):
     user=model.Token(token=encode_jwt_token,user_id=result.id)
     session.add(user)
     await session.commit()
+    response.set_cookie(
+        key="jwt_token",
+        value=encode_jwt_token,
+        httponly=True,
+        secure=False,
+        samesite="lax"
+    )
     print("Added to DB")
-    return {"Toke": encode_jwt_token,"Type":"Bearer"}
+    print("Login successfully")
+    return {"Toke": encode_jwt_token,"Type":"Bearer","message":"Login Successful"}
 
 
 @app.post("/update-report-status")
