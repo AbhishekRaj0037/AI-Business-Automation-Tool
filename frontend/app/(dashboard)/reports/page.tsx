@@ -1,7 +1,28 @@
+"use client";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const DashboardPage = () => {
+  const router = useRouter();
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    async function fetchData() {
+      const res = await fetch("http://localhost:8000/me", {
+        method: "GET",
+        credentials: "include",
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        router.push("/login");
+        return;
+      }
+      setData(result);
+    }
+    fetchData();
+  }, []);
   return (
     <div>
       <div className="text-black text-3xl pt-12 pb-3">Generated Reports</div>

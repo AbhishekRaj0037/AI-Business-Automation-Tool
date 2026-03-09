@@ -1,5 +1,8 @@
+"use client";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 async function getMails() {
   const res = await fetch("http://127.0.0.1:8000/get-all-reports", {
@@ -14,6 +17,25 @@ async function getMails() {
 }
 
 const DashboardPage = async () => {
+  const router = useRouter();
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    async function fetchData() {
+      const res = await fetch("http://localhost:8000/me", {
+        method: "GET",
+        credentials: "include",
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        router.push("/login");
+        return;
+      }
+      setData(result);
+    }
+    fetchData();
+  }, []);
+
   const mails = await getMails();
 
   return (

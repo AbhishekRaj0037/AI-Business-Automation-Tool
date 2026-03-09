@@ -2,6 +2,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type DashboardStats = {
   username: string;
@@ -20,14 +21,26 @@ type DashboardStats = {
 };
 
 const DashboardPage = () => {
+  const router = useRouter();
   const [websocket_incoming_data, setStats] = useState<DashboardStats | null>(
     null,
   );
+  const [data, setData] = useState(null);
   useEffect(() => {
-    console.log("Use effect running");
-    const token =
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhYmhpc2hlazAwMzdAZXhhbXBsZS5jb20iLCJleHAiOjE3NzI3OTU4MzR9.aPjA_9x89clAkWr55dKuH6yO57AXsVHxYYlzDG4-q90";
-    const ws = new WebSocket(`ws://localhost:8000/ws/dashboard?token=${token}`);
+    async function fetchData() {
+      const res = await fetch("http://localhost:8000/me", {
+        method: "GET",
+        credentials: "include",
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        router.push("/login");
+        return;
+      }
+      setData(result);
+    }
+    fetchData();
+    const ws = new WebSocket(`ws://localhost:8000/ws/dashboard`);
     ws.onopen = () => {
       console.log("WebSocket connected successfully");
     };

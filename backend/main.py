@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket,Response
+from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket,Response,Cookie
 from websocket_dashboard import ConnectionManager,update_user_dashboard,r
 from fastapi_sa_orm_filter.operators import Operators as ops
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,7 +54,7 @@ app=FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -167,13 +167,11 @@ def checksum_from_part(part, algo="sha256", chunk_size=8192):
 
 
 @app.get("/")
-async def read_root(request:Request):
-    token=request.cookies.get("jwt_token")
-
-    if not token:
+async def read_root(request:Request,jwt_token:str=Cookie(None)):
+    if not jwt_token:
         raise HTTPException(status_code=401,detail="Not authenticated")
     try:
-        payload=jwt.decode(token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
         username=payload.get("sub")
         if username is None:
             raise HTTPException(status_code=401,detail="Incorrect credential")
@@ -224,7 +222,19 @@ async def get_all_reports():
 async def get_reports(
     objects_filter: str =Query(default=''),
     db:AsyncSession=Depends(get_session),
+    access_token:str=Cookie(None)
 ) -> List[EmailMetaDataOut]:
+    if not access_token:
+        raise HTTPException(status_code=401,detail="Not authenticated")
+    try:
+        payload=jwt.decode(access_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        username=payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401,detail="Incorrect credential")
+    except Exception as err:
+        print("Error authenticating user: ",err)
+        return {"Error":err}
+    print("Welcome ",username)
     filter_result=FilterCore(model.email_metadata,my_objects_filter)
     query=filter_result.get_query(objects_filter)
     db_obj=await session.execute(query)
@@ -236,19 +246,20 @@ async def get_reports(
 @app.post("/fetch-mail-data")
 async def get_mail(
     imap_uid:str,
-    request:Request
+    request:Request,
+    jwt_token:str=Cookie(None)
 ):  
-    request=await request.json()
-    token=request['token']
+    if not jwt_token:
+        raise HTTPException(status_code=401,detail="Not authenticated")
     try:
-        payload=jwt.decode(token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
         username=payload.get("sub")
         if username is None:
             raise HTTPException(status_code=401,detail="Incorrect credential")
     except Exception as err:
         print("Error authenticating user: ",err)
         return {"Error":err}
-    print("Welcome, ",username)
+    print("Welcome ",username)
     mail_data=mail.fetch(imap_uid,'RFC822')
     raw=mail_data[1][0][1]
     raw_message=email.message_from_bytes(raw)
@@ -291,7 +302,18 @@ async def get_mail(
 
 
 @app.post("/create-user")
-async def create_user(request: Request):
+async def create_user(request: Request,jwt_token: str = Cookie(None)):
+    if not jwt_token:
+        raise HTTPException(status_code=401,detail="Not authenticated")
+    try:
+        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        username=payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401,detail="Incorrect credential")
+    except Exception as err:
+        print("Error authenticating user: ",err)
+        return {"Error":err}
+    print("Welcome ",username)
     body = await request.json()
     result=await session.execute(select(model.User).where(model.User.email==body['email']))
     result=result.scalars().all()
@@ -310,7 +332,6 @@ async def login_user(request:Request,response:Response):
     body=await request.json()
     result=await session.execute(select(model.User).where(model.User.email==body['email']))
     result=result.scalars().first()
-    breakpoint()
     if result is None:
         print("User doesn't exsist")
         raise HTTPException(status_code=404,detail="User doesn't exsist")
@@ -336,9 +357,36 @@ async def login_user(request:Request,response:Response):
     print("Login successfully")
     return {"Toke": encode_jwt_token,"Type":"Bearer","message":"Login Successful"}
 
+@app.get("/me")
+async def get_current_user(jwt_token:str=Cookie(None)):
+    breakpoint()
+    if not jwt_token:
+        raise HTTPException(status_code=401,detail="Not authenticated")
+    try:
+        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        username=payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401,detail="Incorrect credential")
+    except Exception as err:
+        print("Error authenticating user: ",err)
+        raise HTTPException(status_code=401,detail="Unauthorized credential")
+    print("Welcome ",username)
+    
+    return {"message":f"{username} authenticated"}
 
 @app.post("/update-report-status")
-async def update_report_status(request:Request):
+async def update_report_status(request:Request,jwt_token: str = Cookie(None)):
+    if not jwt_token:
+        raise HTTPException(status_code=401,detail="Not authenticated")
+    try:
+        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        username=payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401,detail="Incorrect credential")
+    except Exception as err:
+        print("Error authenticating user: ",err)
+        return {"Error":err}
+    print("Welcome ",username)
     body=await request.json()
     report_id=body["report_id"]
     report_status=StatusEnum[body["report_status"]]
@@ -348,11 +396,11 @@ async def update_report_status(request:Request):
 
 
 @app.post("/analyse-report")
-async def analyse_report(request:Request):
-    body=await request.json()
-    token=body.get("token")
+async def analyse_report(request:Request,jwt_token: str = Cookie(None)):
+    if not jwt_token:
+        raise HTTPException(status_code=401,detail="Not authenticated")
     try:
-        payload=jwt.decode(token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
         username=payload.get("sub")
         if username is None:
             raise HTTPException(status_code=401,detail="Incorrect credential")
@@ -395,7 +443,18 @@ async def analyse_report(request:Request):
 
 
 @app.post("/query-document")
-async def search_document(request:Request):
+async def search_document(request:Request,jwt_token: str = Cookie(None)):
+    if not jwt_token:
+        raise HTTPException(status_code=401,detail="Not authenticated")
+    try:
+        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        username=payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401,detail="Incorrect credential")
+    except Exception as err:
+        print("Error authenticating user: ",err)
+        return {"Error":err}
+    print("Welcome ",username)
     body=await request.json()
     if os.path.exists(VECTOR_DB):
         vectorstore=FAISS.load_local(
@@ -424,10 +483,11 @@ async def search_document(request:Request):
 
 
 @app.websocket("/ws/dashboard")
-async def dashboard_ws(websocket:WebSocket):
-    token=websocket.query_params.get("token")
+async def dashboard_ws(websocket:WebSocket,jwt_token: str = Cookie(None)):
+    if not jwt_token:
+        raise HTTPException(status_code=401,detail="Not authenticated")
     try:
-        payload=jwt.decode(token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
         username=payload.get("sub")
         if username is None:
             raise HTTPException(status_code=401,detail="Incorrect credential")
@@ -444,4 +504,4 @@ async def dashboard_ws(websocket:WebSocket):
         while True:
             await websocket.receive_text()
     except:
-        manager.disconnect(username)
+        manager.disconnect(username,websocket)

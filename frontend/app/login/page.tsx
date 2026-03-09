@@ -24,7 +24,7 @@ const LoginPage = () => {
     });
 
     const data = await res.json();
-    console.log("We are inside error ", res.ok);
+
     if (!res.ok) {
       setError(data.detail || "Login failed");
       return;
