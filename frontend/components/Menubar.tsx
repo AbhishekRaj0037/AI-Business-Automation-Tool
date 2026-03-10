@@ -102,7 +102,7 @@ const Menubar = () => {
           </h4>
           <div>
             <label className="radio">
-              <input type="radio" name="update" checked />
+              <input type="radio" name="update" />
               <span className="custom-radio"></span>
               Today – 6:00 PM
             </label>

@@ -16,9 +16,10 @@ async function getMails() {
   return res.json();
 }
 
-const DashboardPage = async () => {
+const DashboardPage = () => {
   const router = useRouter();
   const [data, setData] = useState(null);
+  const [mails, setMailData] = useState<any[]>([]);
 
   useEffect(() => {
     async function fetchData() {
@@ -32,11 +33,11 @@ const DashboardPage = async () => {
         return;
       }
       setData(result);
+      const mails_Data = await getMails();
+      setMailData(mails_Data);
     }
     fetchData();
   }, []);
-
-  const mails = await getMails();
 
   return (
     <div>
@@ -131,7 +132,7 @@ const DashboardPage = async () => {
         </thead>
         <tbody>
           {mails.map((mail: any) => (
-            <tr className="border-t">
+            <tr className="border-t" key={mail.id}>
               <td className="border px-4 py-2 text-green-600">{mail.status}</td>
               <td className="border px-4 py-2">{mail.subject}</td>
               <td className="border px-4 py-2">{mail.mail_from}</td>

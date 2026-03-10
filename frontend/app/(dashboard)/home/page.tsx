@@ -99,34 +99,19 @@ const DashboardPage = () => {
         <div className="border text-black border-gray-300 h-20 rounded-md mr-12">
           <span className="text-2xl pl-2">Recent Reports</span>
           <span className="pl-100">
-            <Link
-              href="/update-dashboard"
+            <button
+              onClick={async () => {
+                const res = await fetch("http://localhost:8000/", {
+                  method: "GET",
+                  credentials: "include",
+                });
+                const data = await res.json();
+                console.log(data);
+              }}
               className="bg-blue-600 text-white px-3 py-3 rounded-lg inline-flex items-center gap-2 hover:bg-blue-700 transition mt-3"
             >
-              <div className="flex items-center justify-center">
-                <svg
-                  className="center"
-                  width="20"
-                  height="25"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                >
-                  <path
-                    d="M21 12a9 9 0 1 1-2.64-6.36"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M21 3v6h-6"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </div>
               Fetch Dashboard Now
-            </Link>
+            </button>
           </span>
         </div>
       </div>

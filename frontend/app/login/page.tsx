@@ -2,15 +2,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 const LoginPage = () => {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     const res = await fetch("http://localhost:8000/login-user", {
       method: "POST",
       headers: {
@@ -30,6 +31,7 @@ const LoginPage = () => {
       return;
     }
     console.log(data);
+    router.push("/home");
   };
 
   return (

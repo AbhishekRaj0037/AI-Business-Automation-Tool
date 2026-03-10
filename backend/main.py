@@ -359,7 +359,6 @@ async def login_user(request:Request,response:Response):
 
 @app.get("/me")
 async def get_current_user(jwt_token:str=Cookie(None)):
-    breakpoint()
     if not jwt_token:
         raise HTTPException(status_code=401,detail="Not authenticated")
     try:
