@@ -39,6 +39,7 @@ from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 from langchain_openai import OpenAI
 from langchain_openai import AzureChatOpenAI
 
+from email.message import Message
 
 SQLAlchemyJobStoreURL=os.getenv("SQLAlchemyJobStore")
 file_download_path=os.getenv("file_download_path")
@@ -165,6 +166,22 @@ def checksum_from_part(part, algo="sha256", chunk_size=8192):
 
     return hasher.hexdigest()
 
+def get_email_body(msg: Message) -> str:
+    """
+    Extracts the plain text body from an email message object.
+    """
+    if msg.is_multipart():
+        for part in msg.walk():
+            # Find the first plain text part
+            if part.get_content_type() == 'text/plain':
+                return part.get_payload(decode=True).decode()
+            # If no plain text, find the first HTML part as a fallback
+            elif part.get_content_type() == 'text/html':
+                # You may want to use a library like html2text to convert HTML to text
+                return part.get_payload(decode=True).decode()
+    else:
+        # Not a multipart message, return the payload directly
+        return msg.get_payload(decode=True).decode()
 
 @app.get("/")
 async def read_root(request:Request,jwt_token:str=Cookie(None)):
@@ -194,13 +211,16 @@ async def read_root(request:Request,jwt_token:str=Cookie(None)):
         mail_from=raw_message["from"]
         subject=raw_message["Subject"]
         received_at=raw_message["Date"]
+        body=get_email_body(raw_message)
+        lines = [line.strip() for line in body.split('\n') if line.strip()]
+        formatted_body = "\n".join(lines)
         aware = parsedate_to_datetime(received_at)
         received_at = aware.astimezone(timezone.utc).replace(tzinfo=None)
         is_uid_already_synced=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(uid)))
         is_uid_already_synced=is_uid_already_synced.scalars().first()
         if is_uid_already_synced is None:
             report_data=None
-            report_data=model.email_metadata(imap_uid=int(uid),mail_from=mail_from,subject=subject,received_at=received_at)
+            report_data=model.email_metadata(imap_uid=int(uid),mail_from=mail_from,subject=subject,received_at=received_at,body=formatted_body)
             session.add(report_data)
             await session.commit()
             await update_user_dashboard(username,stats_changes={
@@ -210,12 +230,17 @@ async def read_root(request:Request,jwt_token:str=Cookie(None)):
 
 
 @app.get("/get-all-reports")
-async def get_all_reports():
-    result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)))
+async def get_all_reports(page:int=Query(1),limit:int=Query(4)):
+    offset=(page-1)*limit
+    result=await session.execute(select(model.email_metadata).offset(offset).order_by(desc(model.email_metadata.imap_uid)).limit(limit))
     result=result.scalars().all()
     return result
    
-
+@app.get("/get-reports-by-id")
+async def get_all_reports(imap_uid:int=Query(1)):
+    result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
+    result=result.scalars().first()
+    return result
 
 
 @app.post("/get-reports")

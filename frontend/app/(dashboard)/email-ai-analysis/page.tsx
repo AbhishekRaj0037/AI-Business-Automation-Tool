@@ -4,22 +4,28 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-async function getMails() {
-  const res = await fetch("http://127.0.0.1:8000/get-all-reports", {
-    cache: "no-store", // disable caching (optional)
-  });
+async function getMails(page: any) {
+  const res = await fetch(
+    `http://127.0.0.1:8000/get-all-reports?page=${page}&limit=4`,
+    {
+      cache: "no-store", // disable caching (optional)
+    },
+  );
 
   if (!res.ok) {
     throw new Error("Failed to fetch data");
   }
-
-  return res.json();
+  const data = await res.json();
+  console.log("here==", data);
+  return data;
 }
 
 const DashboardPage = () => {
   const router = useRouter();
   const [data, setData] = useState(null);
   const [mails, setMailData] = useState<any[]>([]);
+  const [emails, setEmails] = useState([]);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     async function fetchData() {
@@ -33,11 +39,11 @@ const DashboardPage = () => {
         return;
       }
       setData(result);
-      const mails_Data = await getMails();
+      const mails_Data = await getMails(page);
       setMailData(mails_Data);
     }
     fetchData();
-  }, []);
+  }, [page]);
 
   return (
     <div>
@@ -89,45 +95,30 @@ const DashboardPage = () => {
         <div className="border text-black border-gray-300 h-20 rounded-md">
           <span className="text-2xl pl-4">Emails</span>
           <span className="pl-150">
-            <Link
-              href="/update-dashboard"
+            <button
+              onClick={async () => {
+                const res = await fetch("http://localhost:8000/", {
+                  method: "GET",
+                  credentials: "include",
+                });
+                const data = await res.json();
+                console.log(data);
+              }}
               className="bg-blue-600 text-white px-3 py-3 rounded-lg inline-flex items-center gap-2 hover:bg-blue-700 transition mt-3"
             >
-              <div className="flex items-center justify-center">
-                <svg
-                  className="center"
-                  width="20"
-                  height="25"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                >
-                  <path
-                    d="M21 12a9 9 0 1 1-2.64-6.36"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M21 3v6h-6"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </div>
-              Fetch Emails Now
-            </Link>
+              Fetch Email Now
+            </button>
           </span>
         </div>
       </div>
-      <table className="border border-gray-300 w-full text-center text-black">
+      <table className="table-fixed break-words border border-gray-300 w-full text-center text-black">
         <thead className="bg-gray-100">
           <tr>
-            <th className="border px-4 py-2">Status</th>
-            <th className="border px-4 py-2">Subject</th>
+            <th className="border px-4 py-2 w-30">Status</th>
+            <th className="border px-4 py-2 w-70">Subject</th>
             <th className="border px-4 py-2">From</th>
             <th className="border px-4 py-2">Received</th>
-            <th className="border px-4 py-2">View</th>
+            <th className="border px-4 py-2 w-20">View</th>
           </tr>
         </thead>
         <tbody>
@@ -138,46 +129,66 @@ const DashboardPage = () => {
               <td className="border px-4 py-2">{mail.mail_from}</td>
               <td className="border px-4 py-2">{mail.received_at}</td>
               <th className="border px-4 py-2">
-                <a
-                  href="/report/1"
-                  className="text-blue-600 hover:underline text-center"
-                >
-                  View Mail
-                </a>
+                <div className="flex justify-center items-center h-full">
+                  <a
+                    href={`/email-ai-analysis/${mail.imap_uid}`}
+                    className="text-blue-600 hover:underline"
+                  >
+                    <svg
+                      width="20"
+                      height="25"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="3"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </a>
+                </div>
               </th>
             </tr>
           ))}
         </tbody>
       </table>
+
       <div className="flex items-center justify-between px-6 py-4 border-t rounded-b-xl text-black">
         {/* Left side */}
-        <span className="text-sm text-gray-600">
-          Showing 1 to 10 of 50 entries
-        </span>
+        <span className="text-sm text-gray-600"></span>
 
         {/* Right side Pagination */}
         <div className="flex items-center gap-2">
-          <button className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100">
+          <button
+            className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100 "
+            onClick={() => setPage(page - 1)}
+            disabled={page === 1}
+          >
             Previous
           </button>
 
-          <button className="px-3 py-1 bg-blue-600 text-white rounded-md">
-            1
-          </button>
-
-          <button className="px-3 py-1 border rounded-md hover:bg-gray-100">
-            2
-          </button>
-
-          <button className="px-3 py-1 border rounded-md hover:bg-gray-100">
-            3
-          </button>
-
-          <button className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100">
+          <button
+            className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100"
+            onClick={() => setPage(page + 1)}
+          >
             Next
           </button>
         </div>
       </div>
+
       <p className="text-black pt-2">
         • Al analysis runs continuously. Most emails are processed within 2-5
         minutes.

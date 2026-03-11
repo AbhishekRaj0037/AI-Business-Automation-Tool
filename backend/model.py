@@ -54,6 +54,7 @@ class email_metadata(Base):
     id=Column(Integer,primary_key=True)
     imap_uid=Column(Integer,unique=True,nullable=False)
     subject=Column(String)
+    body=Column(String)
     mail_from=Column(String,nullable=False)
     received_at = mapped_column(DateTime,nullable=False)
     status:Mapped[StatusEnum]=mapped_column(default=StatusEnum.incomplete)
@@ -64,6 +65,7 @@ class email_metadata(Base):
             f"id={self.id}, "
             f"imap_uid={self.imap_uid}, "
             f"subject={self.subject})>"
+            f"subject={self.body})>"
             f"mail_from={self.mail_from},"
             f"received_at={self.received_at}, "
             f"status={self.status},"
