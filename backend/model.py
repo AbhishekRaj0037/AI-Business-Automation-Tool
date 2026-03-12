@@ -65,7 +65,7 @@ class email_metadata(Base):
             f"id={self.id}, "
             f"imap_uid={self.imap_uid}, "
             f"subject={self.subject})>"
-            f"subject={self.body})>"
+            f"body={self.body})>"
             f"mail_from={self.mail_from},"
             f"received_at={self.received_at}, "
             f"status={self.status},"
@@ -74,10 +74,9 @@ class email_metadata(Base):
 class email_attachments_metadata(Base):
     __tablename__="AttachmentData"
     id=Column(Integer,primary_key=True)
-    email_id=Column(Integer,ForeignKey("EmailData.id"))
+    imap_uid=Column(Integer,ForeignKey("EmailData.imap_uid"))
     file_name=Column(String)
     file_size=Column(BigInteger)
-    cloudinary_reportUrl=Column(String)
     status: Mapped[StatusEnum]=mapped_column(default=StatusEnum.pending)
     checksum_sha256: Mapped[str]=mapped_column()      
 
@@ -85,10 +84,9 @@ class email_attachments_metadata(Base):
         return (
             f"<AttachmentData("
             f"id={self.id}, "
-            f"email_id={self.email_id}, "
+            f"imap_uid={self.email_id}, "
             f"file_name={self.file_name})>"
             f"file_size={self.file_size},"
-            f"cloudinary_reportUrl={self.cloudinary_reportUrl}, "
             f"status={self.status},"
             f"checksum_sha256={self.checksum_sha256},"
         )

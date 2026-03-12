@@ -28,6 +28,7 @@ import model
 import email
 import json
 import asyncio
+import boto3
 import jwt
 import os
 
@@ -50,8 +51,20 @@ imap_server=os.getenv("imap_server")
 username=os.getenv("username")
 password=os.getenv("password")
 
+aws_access_key=os.getenv("aws_access_key")
+aws_secret_key=os.getenv("aws_secret_key")
+aws_region=os.getenv("aws_region")
+
+
+s3 = boto3.client(
+    "s3",
+    aws_access_key_id=aws_access_key,
+    aws_secret_access_key=aws_secret_key,
+    region_name=aws_region
+)
 
 app=FastAPI()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -223,6 +236,21 @@ async def read_root(request:Request,jwt_token:str=Cookie(None)):
             report_data=model.email_metadata(imap_uid=int(uid),mail_from=mail_from,subject=subject,received_at=received_at,body=formatted_body)
             session.add(report_data)
             await session.commit()
+            for part in raw_message.walk():
+                if part.get_content_maintype() == "multipart":
+                    continue
+                filename = part.get_filename()
+                if filename:
+                    try:
+                        file_bytes = part.get_payload(decode=True)
+                        s3.put_object(Bucket="amzn-s3-bucket-ai-business-automation-assistant",Key=f"{filename}",Body=file_bytes)
+                        print("File uploaded succesfully on aws bucket")
+                        file_data=None
+                        file_data=model.email_attachments_metadata(email_id=int(uid),file_name=filename,file_size=len(file_bytes),status=StatusEnum.incomplete,checksum_sha256="!231231231231!")
+                        session.add(file_data)
+                        await session.commit()
+                    except err as e:
+                        print("Error:  ",e)
             await update_user_dashboard(username,stats_changes={
                 "fetch_today":1
             })
