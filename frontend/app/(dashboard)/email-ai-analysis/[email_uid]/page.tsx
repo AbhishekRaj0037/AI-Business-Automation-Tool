@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 
-async function getMail(imap_uid: any) {
+async function getMail(imap_uid: any, page: any) {
   const res = await fetch(
-    `http://127.0.0.1:8000/get-reports-by-id?imap_uid=${imap_uid}`,
+    `http://127.0.0.1:8000/get-reports-by-id?imap_uid=${imap_uid}&page=${page}&limit=4`,
     {
       cache: "no-store", // disable caching (optional)
     },
@@ -22,6 +22,7 @@ async function getMail(imap_uid: any) {
 const DashboardPage = () => {
   const router = useRouter();
   const [email, setEmailData] = useState<any>(null);
+  const [page, setPage] = useState(1);
   const params = useParams();
   useEffect(() => {
     async function fetchData() {
@@ -35,18 +36,22 @@ const DashboardPage = () => {
         return;
       }
       // setEmail(result);
-      const mail_Data = await getMail(params.email_uid);
+      const mail_Data = await getMail(params.email_uid, page);
       setEmailData(mail_Data);
     }
     fetchData();
-  }, []);
+  }, [page]);
+
+  const [selectedFile, setSelectedFile] = useState(null);
   return (
     <>
       {email && (
         <div>
           <div className="mb-2 mt-4 text-black">
             <div className="border text-black border-gray-300 h-20 rounded-md pt-6">
-              <span className="text-2xl pl-4 mt-4">{email.subject}</span>
+              <span className="text-2xl pl-4 mt-4">
+                {email.mail_result.subject}
+              </span>
             </div>
             <div className="border text-black border-gray-300 h-20 rounded-md flex items-center gap-3 px-4">
               <img
@@ -57,14 +62,16 @@ const DashboardPage = () => {
               <span className="font-semibold m-2">
                 <div>{email.mail_from}</div>
               </span>
-              <span className="pl-60">Received: {email.received_at}</span>
+              <span className="pl-60">
+                Received: {email.mail_result.received_at}
+              </span>
             </div>
           </div>
           <div className="text-black text-lg border border-black p-4">
             Email Body
           </div>
           <div className="text-black border border-black mb-4">
-            <p className="m-4">{email.subject}</p>
+            <p className="m-4">{email.mail_result.body}</p>
           </div>
           <table className="border border-gray-300 w-full text-left text-black">
             <thead className="bg-gray-100 text-center">
@@ -77,99 +84,92 @@ const DashboardPage = () => {
               </tr>
             </thead>
             <tbody>
-              <tr className="border-t">
-                <td className="border px-4 py-2 text-green-600 text-center">
-                  Quarterly_Report_Template.pdf
-                </td>
-                <td className="border px-4 py-2 text-center">PDF</td>
-                <td className="border px-4 py-2 text-center">1.2MB</td>
-                <td className="border px-4 py-2 text-center">
-                  <a href="/report/1" className="text-blue-600 hover:underline">
-                    Give it to AI
-                  </a>
-                </td>
-                <td className="border px-4 py-2">
-                  <div className="flex justify-center items-center h-full">
-                    <a
-                      href="/report/1"
-                      className="text-blue-600 hover:underline"
-                    >
-                      <svg
-                        width="20"
-                        height="25"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path
-                          d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <circle
-                          cx="12"
-                          cy="12"
-                          r="3"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </a>
-                  </div>
-                </td>
-              </tr>
+              {email.attachment_result?.map((file: any, index: any) => {
+                const fileUrl = email.list_of_file_presigned_url?.[index];
 
-              <tr className="border-t">
-                <td className="border px-4 py-2 text-yellow-600 text-center">
-                  FINANCIAL_DATA_Q1_2024.xlsx
-                </td>
-                <td className="border px-4 py-2 text-center">Excel</td>
-                <td className="border px-4 py-2 text-center">650KB</td>
-                <td className="border px-4 py-2 text-center">
-                  <a href="/report/1" className="text-blue-600 hover:underline">
-                    Give it to AI
-                  </a>
-                </td>
-                <td className="border px-4 py-2">
-                  <div className="flex justify-center items-center h-full">
-                    <a
-                      href="/report/1"
-                      className="text-blue-600 hover:underline"
-                    >
-                      <svg
-                        width="20"
-                        height="25"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
+                return (
+                  <tr className="border-t" key={index}>
+                    <td className="border px-4 py-2 text-green-600 text-center">
+                      {file.file_name}
+                    </td>
+
+                    <td className="border px-4 py-2 text-center">
+                      {file.file_type?.toUpperCase()}
+                    </td>
+
+                    <td className="border px-4 py-2 text-center">
+                      {(file.file_size / 1024 / 1024).toFixed(2)} MB
+                    </td>
+
+                    <td className="border px-4 py-2 text-center">
+                      <a
+                        href={`/report/${index}`}
+                        className="text-blue-600 hover:underline"
                       >
-                        <path
-                          d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <circle
-                          cx="12"
-                          cy="12"
-                          r="3"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </a>
-                  </div>
-                </td>
-              </tr>
+                        Give it to AI
+                      </a>
+                    </td>
+
+                    <td className="border px-4 py-2">
+                      <div className="flex justify-center items-center h-full">
+                        <button
+                          onClick={() => {
+                            {
+                              console.log("File url current===> ", fileUrl);
+                            }
+                            setSelectedFile(fileUrl);
+                          }}
+                          className="text-blue-600 hover:underline"
+                        >
+                          👁
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+
+          {selectedFile && (
+            <div className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50">
+              {/* Close button */}
+              <button
+                onClick={() => setSelectedFile(null)}
+                className="absolute top-5 right-5 text-white text-2xl"
+              >
+                ✖
+              </button>
+
+              {/* File Viewer */}
+              <div className="bg-white w-[80%] h-[80%] rounded-lg overflow-hidden shadow-lg">
+                {/* PDF / general viewer */}
+                <iframe src={selectedFile} className="w-full h-full" />
+              </div>
+            </div>
+          )}
+          <div className="flex items-center justify-between px-6 py-4 border-t rounded-b-xl text-black">
+            {/* Left side */}
+            <span className="text-sm text-gray-600"></span>
+
+            {/* Right side Pagination */}
+            <div className="flex items-center gap-2">
+              <button
+                className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100 "
+                onClick={() => setPage(page - 1)}
+                disabled={page === 1}
+              >
+                Previous
+              </button>
+
+              <button
+                className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100"
+                onClick={() => setPage(page + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
 
           <p className="text-black pt-2">
             • Al analysis runs continuously. Most emails are processed within

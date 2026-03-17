@@ -246,7 +246,8 @@ async def read_root(request:Request,jwt_token:str=Cookie(None)):
                         s3.put_object(Bucket="amzn-s3-bucket-ai-business-automation-assistant",Key=f"{filename}",Body=file_bytes)
                         print("File uploaded succesfully on aws bucket")
                         file_data=None
-                        file_data=model.email_attachments_metadata(email_id=int(uid),file_name=filename,file_size=len(file_bytes),status=StatusEnum.incomplete,checksum_sha256="!231231231231!")
+                        content_type = part.get_content_type()
+                        file_data=model.email_attachments_metadata(imap_uid=int(uid),file_name=filename,file_type=content_type,file_size=len(file_bytes),status=StatusEnum.incomplete,checksum_sha256="!231231231231!")
                         session.add(file_data)
                         await session.commit()
                     except err as e:
@@ -265,9 +266,26 @@ async def get_all_reports(page:int=Query(1),limit:int=Query(4)):
     return result
    
 @app.get("/get-reports-by-id")
-async def get_all_reports(imap_uid:int=Query(1)):
-    result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
-    result=result.scalars().first()
+async def get_all_reports(imap_uid:int=Query(1),page:int=Query(1),limit:int=Query(4)):
+    mail_result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
+    mail_result=mail_result.scalars().first()
+    offset=(page-1)*limit
+    attachment_result=await session.execute(select(model.email_attachments_metadata).offset(offset).where(model.email_attachments_metadata.imap_uid==int(imap_uid)).limit(limit))
+    attachment_result=attachment_result.scalars().all()
+    list_of_file_url=[]
+    for result in attachment_result:
+        url = s3.generate_presigned_url(
+        ClientMethod='get_object',
+        Params={
+            'Bucket': "amzn-s3-bucket-ai-business-automation-assistant",
+            'Key': result.file_name,
+            'ResponseContentDisposition': 'inline',
+            'ResponseContentType': result.file_type
+        },
+        ExpiresIn=300
+    )
+        list_of_file_url.append(url)
+    result={"mail_result":mail_result,"attachment_result":attachment_result,"list_of_file_presigned_url":list_of_file_url}
     return result
 
 
@@ -557,3 +575,39 @@ async def dashboard_ws(websocket:WebSocket,jwt_token: str = Cookie(None)):
             await websocket.receive_text()
     except:
         manager.disconnect(username,websocket)
+
+
+
+@app.post("/schedule-jobs")
+async def search_document(request:Request,jwt_token: str = Cookie(None)):
+    if not jwt_token:
+        raise HTTPException(status_code=401,detail="Not authenticated")
+    try:
+        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        username=payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401,detail="Incorrect credential")
+    except Exception as err:
+        print("Error authenticating user: ",err)
+        return {"Error":err}
+    print("Welcome ",username)
+    body=await request.json()
+    breakpoint()
+    hour = int(hour)
+    minute = int(minute)
+    if body["period"] == "PM" and hour != 12:
+        hour += 12
+    if body["period"]== "AM" and hour == 12:
+        hour = 0
+    try:
+        if body["frequency"]=="Every day":
+            scheduler.add_job(get_mail,trigger="cron",hour=hour,minute=minute,id="daily_job",kwargs={})
+        elif body["frequency"]=="Every 6 hours":
+            scheduler.add_job(get_mail,trigger="interval",hours=6,start_date=datetime.now().replace(hour=hour, minute=minute, second=0),id="6hour_job",kwargs={})
+        elif body["frequency"]=="Every 12 hours":
+            scheduler.add_job(get_mail,trigger="interval",hours=12,start_date=datetime.now().replace(hour=hour, minute=minute, second=0),id="12hour_job",kwargs={})
+        elif body["frequency"]=="Weekly":
+            scheduler.add_job(get_mail,trigger="cron",day_of_week="mon",hour=hour,minute=minute,id="weekly_job",kwargs={})
+        print("Successfully added job in job store.")
+    except Exception as err:
+        print("You have error scheduling jobs:    ",err)

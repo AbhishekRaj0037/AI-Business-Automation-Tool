@@ -1,7 +1,60 @@
+"use client";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+
 import Image from "next/image";
 import Link from "next/link";
 
 const DashboardPage = () => {
+  const router = useRouter();
+  useEffect(() => {
+    async function fetchData() {
+      const res = await fetch("http://localhost:8000/me", {
+        method: "GET",
+        credentials: "include",
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        router.push("/login");
+        return;
+      }
+    }
+    fetchData();
+  });
+  const handleSubmit = async (e: any) => {
+    e.preventDefault(); // 🔥 prevent page reload
+
+    const data = {
+      hour,
+      minute,
+      period,
+      frequency,
+    };
+
+    try {
+      const res = await fetch("http://localhost:8000/schedule-jobs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include", // if using cookies
+        body: JSON.stringify(data),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to save schedule");
+      }
+
+      const result = await res.json();
+      console.log("Saved:", result);
+    } catch (err) {
+      console.error("Error:", err);
+    }
+  };
+  const [hour, setHour] = useState("01");
+  const [minute, setMinute] = useState("00");
+  const [period, setPeriod] = useState("AM");
+  const [frequency, setFrequency] = useState("Every day");
   return (
     <div>
       <div className="text-black text-3xl pt-12">Schedules</div>
@@ -24,7 +77,7 @@ const DashboardPage = () => {
               Schedule Dashboard Updates
             </h2>
 
-            <form className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
               {/* Schedule Time */}
               <div>
                 <label className="block text-gray-700 font-medium mb-2">
@@ -32,19 +85,28 @@ const DashboardPage = () => {
                 </label>
 
                 <div className="flex gap-3">
-                  <select className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <select
+                    value={hour}
+                    onChange={(e) => setHour(e.target.value)}
+                  >
                     {[...Array(12)].map((_, i) => (
                       <option key={i}>{String(i + 1).padStart(2, "0")}</option>
                     ))}
                   </select>
 
-                  <select className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <select
+                    value={minute}
+                    onChange={(e) => setMinute(e.target.value)}
+                  >
                     {[...Array(60)].map((_, i) => (
                       <option key={i}>{String(i).padStart(2, "0")}</option>
                     ))}
                   </select>
 
-                  <select className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <select
+                    value={period}
+                    onChange={(e) => setPeriod(e.target.value)}
+                  >
                     <option>AM</option>
                     <option>PM</option>
                   </select>
@@ -61,7 +123,10 @@ const DashboardPage = () => {
                   Frequency
                 </label>
 
-                <select className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select
+                  value={frequency}
+                  onChange={(e) => setFrequency(e.target.value)}
+                >
                   <option>Every day</option>
                   <option>Every 6 hours</option>
                   <option>Every 12 hours</option>

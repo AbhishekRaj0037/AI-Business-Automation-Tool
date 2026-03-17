@@ -76,6 +76,7 @@ class email_attachments_metadata(Base):
     id=Column(Integer,primary_key=True)
     imap_uid=Column(Integer,ForeignKey("EmailData.imap_uid"))
     file_name=Column(String)
+    file_type=Column(String)
     file_size=Column(BigInteger)
     status: Mapped[StatusEnum]=mapped_column(default=StatusEnum.pending)
     checksum_sha256: Mapped[str]=mapped_column()      
@@ -84,7 +85,7 @@ class email_attachments_metadata(Base):
         return (
             f"<AttachmentData("
             f"id={self.id}, "
-            f"imap_uid={self.email_id}, "
+            f"imap_uid={self.imap_uid}, "
             f"file_name={self.file_name})>"
             f"file_size={self.file_size},"
             f"status={self.status},"
