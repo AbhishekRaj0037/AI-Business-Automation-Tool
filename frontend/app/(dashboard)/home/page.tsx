@@ -28,16 +28,22 @@ const DashboardPage = () => {
   const [data, setData] = useState(null);
   useEffect(() => {
     async function fetchData() {
-      const res = await fetch("http://localhost:8000/me", {
-        method: "GET",
-        credentials: "include",
-      });
-      const result = await res.json();
-      if (!res.ok) {
-        router.push("/login");
-        return;
+      try {
+        const res = await fetch("http://localhost:8000/me", {
+          method: "GET",
+          credentials: "include",
+        });
+        if (!res.ok) {
+          router.push("/login");
+          return;
+        }
+        const result = await res.json();
+        console.log("response===>", result);
+        setData(result);
+      } catch (err) {
+        console.error("Fetch error:", err);
+        router.push("/login"); // fallback
       }
-      setData(result);
     }
     fetchData();
     const ws = new WebSocket(`ws://localhost:8000/ws/dashboard`);

@@ -1,6 +1,8 @@
 from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket,Response,Cookie
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import JSONResponse
 from websocket_dashboard import ConnectionManager,update_user_dashboard,r
 from fastapi_sa_orm_filter.operators import Operators as ops
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,8 +65,48 @@ s3 = boto3.client(
     region_name=aws_region
 )
 
+ALGORITHM="HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES=10
+REFRESH_TOKEN_EXPIRE_MINUTES=30*60
+
+password_hash=PasswordHash.recommended()
+
 app=FastAPI()
 
+EXCLUDED_PATHS = ["/login-user", "/create-user", "/docs", "/openapi.json"]
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+
+        if request.url.path in EXCLUDED_PATHS:
+            return await call_next(request)
+        jwt_token = request.cookies.get("jwt_token")
+        if not jwt_token:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Not authenticated"}
+            )
+        try:
+            payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+            username=payload.get("sub")
+            if username is None:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid credentials"}
+                )
+            
+            request.state.user = username
+        except Exception as err:
+            print("Error authenticating user: ",err)
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid token"}
+            )
+
+       
+        response = await call_next(request)
+        
+        return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -74,18 +116,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(AuthMiddleware)
+
 manager=ConnectionManager()
 
 mail= imaplib.IMAP4_SSL(imap_server)
 mail.login(username,password)
 mail.select("inbox")
 
-
-ALGORITHM="HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES=10
-REFRESH_TOKEN_EXPIRE_MINUTES=30*60
-
-password_hash=PasswordHash.recommended()
 
 VECTOR_DB=os.getenv("VECTOR_DB")
 
@@ -195,20 +233,11 @@ def get_email_body(msg: Message) -> str:
     else:
         # Not a multipart message, return the payload directly
         return msg.get_payload(decode=True).decode()
+    
 
 @app.get("/")
-async def read_root(request:Request,jwt_token:str=Cookie(None)):
-    if not jwt_token:
-        raise HTTPException(status_code=401,detail="Not authenticated")
-    try:
-        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401,detail="Incorrect credential")
-    except Exception as err:
-        print("Error authenticating user: ",err)
-        return {"Error":err}
-    print("Welcome ",username)
+async def read_root(request:Request):
+    print("Welcome ",request.state.user)
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)).limit(1))
     result=result.scalars().first()
     starting_uid_range=0
@@ -259,14 +288,16 @@ async def read_root(request:Request,jwt_token:str=Cookie(None)):
 
 
 @app.get("/get-all-reports")
-async def get_all_reports(page:int=Query(1),limit:int=Query(4)):
+async def get_all_reports(request:Request,page:int=Query(1),limit:int=Query(4)):
+    print("Welcome ",request.state.user)
     offset=(page-1)*limit
     result=await session.execute(select(model.email_metadata).offset(offset).order_by(desc(model.email_metadata.imap_uid)).limit(limit))
     result=result.scalars().all()
     return result
    
 @app.get("/get-reports-by-id")
-async def get_all_reports(imap_uid:int=Query(1),page:int=Query(1),limit:int=Query(4)):
+async def get_all_reports(request:Request,imap_uid:int=Query(1),page:int=Query(1),limit:int=Query(4)):
+    print("Welcome ",request.state.user)
     mail_result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
     mail_result=mail_result.scalars().first()
     offset=(page-1)*limit
@@ -291,21 +322,11 @@ async def get_all_reports(imap_uid:int=Query(1),page:int=Query(1),limit:int=Quer
 
 @app.post("/get-reports")
 async def get_reports(
+    request:Request,
     objects_filter: str =Query(default=''),
     db:AsyncSession=Depends(get_session),
-    access_token:str=Cookie(None)
 ) -> List[EmailMetaDataOut]:
-    if not access_token:
-        raise HTTPException(status_code=401,detail="Not authenticated")
-    try:
-        payload=jwt.decode(access_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401,detail="Incorrect credential")
-    except Exception as err:
-        print("Error authenticating user: ",err)
-        return {"Error":err}
-    print("Welcome ",username)
+    print("Welcome ",request.state.user)
     filter_result=FilterCore(model.email_metadata,my_objects_filter)
     query=filter_result.get_query(objects_filter)
     db_obj=await session.execute(query)
@@ -318,19 +339,8 @@ async def get_reports(
 async def get_mail(
     imap_uid:str,
     request:Request,
-    jwt_token:str=Cookie(None)
 ):  
-    if not jwt_token:
-        raise HTTPException(status_code=401,detail="Not authenticated")
-    try:
-        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401,detail="Incorrect credential")
-    except Exception as err:
-        print("Error authenticating user: ",err)
-        return {"Error":err}
-    print("Welcome ",username)
+    print("Welcome ",request.state.user)
     mail_data=mail.fetch(imap_uid,'RFC822')
     raw=mail_data[1][0][1]
     raw_message=email.message_from_bytes(raw)
@@ -373,18 +383,8 @@ async def get_mail(
 
 
 @app.post("/create-user")
-async def create_user(request: Request,jwt_token: str = Cookie(None)):
-    if not jwt_token:
-        raise HTTPException(status_code=401,detail="Not authenticated")
-    try:
-        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401,detail="Incorrect credential")
-    except Exception as err:
-        print("Error authenticating user: ",err)
-        return {"Error":err}
-    print("Welcome ",username)
+async def create_user(request: Request):
+    print("Welcome ",request.state.user)
     body = await request.json()
     result=await session.execute(select(model.User).where(model.User.email==body['email']))
     result=result.scalars().all()
@@ -430,6 +430,7 @@ async def login_user(request:Request,response:Response):
 
 @app.get("/me")
 async def get_current_user(jwt_token:str=Cookie(None)):
+    breakpoint()
     if not jwt_token:
         raise HTTPException(status_code=401,detail="Not authenticated")
     try:
@@ -445,18 +446,8 @@ async def get_current_user(jwt_token:str=Cookie(None)):
     return {"message":f"{username} authenticated"}
 
 @app.post("/update-report-status")
-async def update_report_status(request:Request,jwt_token: str = Cookie(None)):
-    if not jwt_token:
-        raise HTTPException(status_code=401,detail="Not authenticated")
-    try:
-        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401,detail="Incorrect credential")
-    except Exception as err:
-        print("Error authenticating user: ",err)
-        return {"Error":err}
-    print("Welcome ",username)
+async def update_report_status(request:Request):
+    print("Welcome ",request.state.user)
     body=await request.json()
     report_id=body["report_id"]
     report_status=StatusEnum[body["report_status"]]
@@ -466,19 +457,8 @@ async def update_report_status(request:Request,jwt_token: str = Cookie(None)):
 
 
 @app.post("/analyse-report")
-async def analyse_report(request:Request,jwt_token: str = Cookie(None)):
-    if not jwt_token:
-        raise HTTPException(status_code=401,detail="Not authenticated")
-    try:
-        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401,detail="Incorrect credential")
-    except Exception as err:
-        print("Error authenticating user: ",err)
-        return {"Error":err}
-    print("Welcome ",username)
-    # report_id=body["report_id"]
+async def analyse_report(request:Request):
+    print("Welcome ",request.state.user)
     try:
         await update_user_dashboard(username,queue_changes={
                     "pending":1,
@@ -513,18 +493,8 @@ async def analyse_report(request:Request,jwt_token: str = Cookie(None)):
 
 
 @app.post("/query-document")
-async def search_document(request:Request,jwt_token: str = Cookie(None)):
-    if not jwt_token:
-        raise HTTPException(status_code=401,detail="Not authenticated")
-    try:
-        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401,detail="Incorrect credential")
-    except Exception as err:
-        print("Error authenticating user: ",err)
-        return {"Error":err}
-    print("Welcome ",username)
+async def search_document(request:Request):
+    print("Welcome ",request.state.user)
     body=await request.json()
     if os.path.exists(VECTOR_DB):
         vectorstore=FAISS.load_local(
@@ -553,18 +523,8 @@ async def search_document(request:Request,jwt_token: str = Cookie(None)):
 
 
 @app.websocket("/ws/dashboard")
-async def dashboard_ws(websocket:WebSocket,jwt_token: str = Cookie(None)):
-    if not jwt_token:
-        raise HTTPException(status_code=401,detail="Not authenticated")
-    try:
-        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401,detail="Incorrect credential")
-    except Exception as err:
-        print("Error authenticating user: ",err)
-        return {"Error":err}
-    print("Welcome ",username)
+async def dashboard_ws(websocket:WebSocket,request:Request):
+    print("Welcome ",request.state.user)
     await manager.connect(username,websocket)
     data=await get_dashboard_stats(username)
     await websocket.send_json({
@@ -579,35 +539,25 @@ async def dashboard_ws(websocket:WebSocket,jwt_token: str = Cookie(None)):
 
 
 @app.post("/schedule-jobs")
-async def search_document(request:Request,jwt_token: str = Cookie(None)):
-    if not jwt_token:
-        raise HTTPException(status_code=401,detail="Not authenticated")
-    try:
-        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401,detail="Incorrect credential")
-    except Exception as err:
-        print("Error authenticating user: ",err)
-        return {"Error":err}
-    print("Welcome ",username)
+async def search_document(request:Request):
+    print("Welcome ",request.state.user)
     body=await request.json()
     breakpoint()
-    hour = int(hour)
-    minute = int(minute)
+    hour = int(body["hour"])
+    minute = int(body["minute"])
     if body["period"] == "PM" and hour != 12:
         hour += 12
     if body["period"]== "AM" and hour == 12:
         hour = 0
     try:
         if body["frequency"]=="Every day":
-            scheduler.add_job(get_mail,trigger="cron",hour=hour,minute=minute,id="daily_job",kwargs={})
+            scheduler.add_job(read_root,trigger="cron",hour=hour,minute=minute,id="daily_job",kwargs={"username": username})
         elif body["frequency"]=="Every 6 hours":
-            scheduler.add_job(get_mail,trigger="interval",hours=6,start_date=datetime.now().replace(hour=hour, minute=minute, second=0),id="6hour_job",kwargs={})
+            scheduler.add_job(read_root,trigger="interval",hours=6,start_date=datetime.now().replace(hour=hour, minute=minute, second=0),id="6hour_job",kwargs={"username": username})
         elif body["frequency"]=="Every 12 hours":
-            scheduler.add_job(get_mail,trigger="interval",hours=12,start_date=datetime.now().replace(hour=hour, minute=minute, second=0),id="12hour_job",kwargs={})
+            scheduler.add_job(read_root,trigger="interval",hours=12,start_date=datetime.now().replace(hour=hour, minute=minute, second=0),id="12hour_job",kwargs={"username": username})
         elif body["frequency"]=="Weekly":
-            scheduler.add_job(get_mail,trigger="cron",day_of_week="mon",hour=hour,minute=minute,id="weekly_job",kwargs={})
+            scheduler.add_job(read_root,trigger="cron",day_of_week="mon",hour=hour,minute=minute,id="weekly_job",kwargs={"username": username})
         print("Successfully added job in job store.")
     except Exception as err:
         print("You have error scheduling jobs:    ",err)
