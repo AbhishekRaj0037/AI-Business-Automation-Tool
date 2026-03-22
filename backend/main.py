@@ -30,6 +30,7 @@ import model
 import email
 import json
 import asyncio
+import time
 import boto3
 import jwt
 import os
@@ -73,11 +74,10 @@ password_hash=PasswordHash.recommended()
 
 app=FastAPI()
 
-EXCLUDED_PATHS = ["/login-user", "/create-user", "/docs", "/openapi.json"]
+EXCLUDED_PATHS = ["/login-user", "/create-user"]
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-
         if request.url.path in EXCLUDED_PATHS:
             return await call_next(request)
         jwt_token = request.cookies.get("jwt_token")
@@ -279,7 +279,7 @@ async def read_root(request:Request):
                         file_data=model.email_attachments_metadata(imap_uid=int(uid),file_name=filename,file_type=content_type,file_size=len(file_bytes),status=StatusEnum.incomplete,checksum_sha256="!231231231231!")
                         session.add(file_data)
                         await session.commit()
-                    except err as e:
+                    except Exception as e:
                         print("Error:  ",e)
             await update_user_dashboard(username,stats_changes={
                 "fetch_today":1
@@ -428,22 +428,22 @@ async def login_user(request:Request,response:Response):
     print("Login successfully")
     return {"Toke": encode_jwt_token,"Type":"Bearer","message":"Login Successful"}
 
-@app.get("/me")
-async def get_current_user(jwt_token:str=Cookie(None)):
-    breakpoint()
-    if not jwt_token:
-        raise HTTPException(status_code=401,detail="Not authenticated")
-    try:
-        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401,detail="Incorrect credential")
-    except Exception as err:
-        print("Error authenticating user: ",err)
-        raise HTTPException(status_code=401,detail="Unauthorized credential")
-    print("Welcome ",username)
+# @app.get("/me")
+# async def get_current_user(jwt_token:str=Cookie(None)):
+#     breakpoint()
+#     if not jwt_token:
+#         raise HTTPException(status_code=401,detail="Not authenticated")
+#     try:
+#         payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+#         username=payload.get("sub")
+#         if username is None:
+#             raise HTTPException(status_code=401,detail="Incorrect credential")
+#     except Exception as err:
+#         print("Error authenticating user: ",err)
+#         raise HTTPException(status_code=401,detail="Unauthorized credential")
+#     print("Welcome ",username)
     
-    return {"message":f"{username} authenticated"}
+#     return {"message":f"{username} authenticated"}
 
 @app.post("/update-report-status")
 async def update_report_status(request:Request):
@@ -523,18 +523,53 @@ async def search_document(request:Request):
 
 
 @app.websocket("/ws/dashboard")
-async def dashboard_ws(websocket:WebSocket,request:Request):
-    print("Welcome ",request.state.user)
+async def dashboard_ws(websocket:WebSocket):
+    jwt_token = websocket.cookies.get("jwt_token")
     await manager.connect(username,websocket)
+    if not jwt_token:
+        await websocket.close(code=1008)
+        return
+    
+    try:
+        payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
+        sername=payload.get("sub")
+        exp=payload.get("exp")
+    except jwt.ExpiredSignatureError:
+        await websocket.close(code=1008)
+        return
     data=await get_dashboard_stats(username)
     await websocket.send_json({
         'username':username,'data':data
     })
-    try: 
-        while True:
-            await websocket.receive_text()
-    except:
-        manager.disconnect(username,websocket)
+    async def receive_loop():
+        try:
+            while True:
+                msg = await websocket.receive_text()
+        except Exception:
+            pass
+
+    async def token_monitor():
+        try:
+            remaining = exp - int(time.time())
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+            await websocket.send_json({"error": "token expired"})
+            await websocket.close(code=1008)
+        except Exception:
+            pass
+
+    receive_task = asyncio.create_task(receive_loop())
+    monitor_task = asyncio.create_task(token_monitor())
+
+    done, pending = await asyncio.wait(
+        [receive_task, monitor_task],
+        return_when=asyncio.FIRST_COMPLETED
+    )
+
+    for task in pending:
+        task.cancel()
+
+    manager.disconnect(username, websocket)
 
 
 
@@ -542,7 +577,6 @@ async def dashboard_ws(websocket:WebSocket,request:Request):
 async def search_document(request:Request):
     print("Welcome ",request.state.user)
     body=await request.json()
-    breakpoint()
     hour = int(body["hour"])
     minute = int(body["minute"])
     if body["period"] == "PM" and hour != 12:

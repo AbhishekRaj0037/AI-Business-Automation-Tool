@@ -6,17 +6,21 @@ import { useEffect, useState } from "react";
 
 async function getMails(page: any) {
   const res = await fetch(
-    `http://127.0.0.1:8000/get-all-reports?page=${page}&limit=4`,
+    `http://localhost:8000/get-all-reports?page=${page}&limit=4`,
     {
-      cache: "no-store", // disable caching (optional)
+      cache: "no-store",
+      credentials: "include",
     },
   );
+  console.log("response===>", res);
+  if (res.status === 401) {
+    window.location.href = "/login";
+  }
 
   if (!res.ok) {
     throw new Error("Failed to fetch data");
   }
   const data = await res.json();
-  console.log("here==", data);
   return data;
 }
 
@@ -29,16 +33,6 @@ const DashboardPage = () => {
 
   useEffect(() => {
     async function fetchData() {
-      const res = await fetch("http://localhost:8000/me", {
-        method: "GET",
-        credentials: "include",
-      });
-      const result = await res.json();
-      if (!res.ok) {
-        router.push("/login");
-        return;
-      }
-      setData(result);
       const mails_Data = await getMails(page);
       setMailData(mails_Data);
     }

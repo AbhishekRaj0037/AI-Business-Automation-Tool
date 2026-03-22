@@ -27,25 +27,6 @@ const DashboardPage = () => {
   );
   const [data, setData] = useState(null);
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const res = await fetch("http://localhost:8000/me", {
-          method: "GET",
-          credentials: "include",
-        });
-        if (!res.ok) {
-          router.push("/login");
-          return;
-        }
-        const result = await res.json();
-        console.log("response===>", result);
-        setData(result);
-      } catch (err) {
-        console.error("Fetch error:", err);
-        router.push("/login"); // fallback
-      }
-    }
-    fetchData();
     const ws = new WebSocket(`ws://localhost:8000/ws/dashboard`);
     ws.onopen = () => {
       console.log("WebSocket connected successfully");
@@ -59,8 +40,12 @@ const DashboardPage = () => {
     ws.onerror = (err) => {
       console.log("WebSocket error", err);
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       console.log("WebSocket closed");
+      console.log("Code:", event.code);
+      if (event.code === 1008) {
+        window.location.href = "/login";
+      }
     };
     return () => ws.close();
   }, []);
