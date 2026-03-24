@@ -12,7 +12,6 @@ async function getMails(page: any) {
       credentials: "include",
     },
   );
-  console.log("response===>", res);
   if (res.status === 401) {
     window.location.href = "/login";
   }

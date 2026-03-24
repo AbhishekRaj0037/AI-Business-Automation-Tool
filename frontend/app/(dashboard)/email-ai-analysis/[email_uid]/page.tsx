@@ -6,12 +6,16 @@ import { useRouter, useParams } from "next/navigation";
 
 async function getMail(imap_uid: any, page: any) {
   const res = await fetch(
-    `http://127.0.0.1:8000/get-reports-by-id?imap_uid=${imap_uid}&page=${page}&limit=4`,
+    `http://localhost:8000/get-reports-by-id?imap_uid=${imap_uid}&page=${page}&limit=4`,
     {
-      cache: "no-store", // disable caching (optional)
+      cache: "no-store",
+      credentials: "include",
     },
   );
 
+  if (res.status === 401) {
+    window.location.href = "/login";
+  }
   if (!res.ok) {
     throw new Error("Failed to fetch data");
   }
@@ -26,16 +30,6 @@ const DashboardPage = () => {
   const params = useParams();
   useEffect(() => {
     async function fetchData() {
-      const res = await fetch("http://localhost:8000/me", {
-        method: "GET",
-        credentials: "include",
-      });
-      const result = await res.json();
-      if (!res.ok) {
-        router.push("/login");
-        return;
-      }
-      // setEmail(result);
       const mail_Data = await getMail(params.email_uid, page);
       setEmailData(mail_Data);
     }

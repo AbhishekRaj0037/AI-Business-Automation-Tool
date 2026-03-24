@@ -8,21 +8,10 @@ import Link from "next/link";
 const DashboardPage = () => {
   const router = useRouter();
   useEffect(() => {
-    async function fetchData() {
-      const res = await fetch("http://localhost:8000/me", {
-        method: "GET",
-        credentials: "include",
-      });
-      const result = await res.json();
-      if (!res.ok) {
-        router.push("/login");
-        return;
-      }
-    }
-    fetchData();
+    async function fetchData() {}
   });
   const handleSubmit = async (e: any) => {
-    e.preventDefault(); // 🔥 prevent page reload
+    e.preventDefault();
 
     const data = {
       hour,
