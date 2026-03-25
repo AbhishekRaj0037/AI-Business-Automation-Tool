@@ -17,7 +17,7 @@ from email.utils import parsedate_to_datetime
 from DataBase import session,get_session
 from FileUpload import cloudinary
 import websocket_dashboard
-from model import StatusEnum
+from model import StatusEnum,ScheduleEnum
 from schemas import EmailMetaDataOut
 from pwdlib import PasswordHash
 from datetime import date
@@ -30,7 +30,7 @@ import model
 import email
 import json
 import asyncio
-import time
+from datetime import time
 import boto3
 import jwt
 import os
@@ -165,6 +165,7 @@ job_defaults={
 
 scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=job_defaults)
 
+
 async def get_dashboard_stats(username: str):
     today = date.today().isoformat()
     queue_key = f"user:{username}:queue"
@@ -235,7 +236,10 @@ def get_email_body(msg: Message) -> str:
 
 @app.get("/")
 async def read_root(request:Request):
-    print("Welcome ",request.state.user)
+    await process_dashboard(request.state.user)
+
+async def process_dashboard(username):
+    print("Welcome ",username)
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)).limit(1))
     result=result.scalars().first()
     starting_uid_range=0
@@ -382,7 +386,6 @@ async def get_mail(
 
 @app.post("/create-user")
 async def create_user(request: Request):
-    print("Welcome ",request.state.user)
     body = await request.json()
     result=await session.execute(select(model.User).where(model.User.email==body['email']))
     result=result.scalars().all()
@@ -392,6 +395,10 @@ async def create_user(request: Request):
     hashed_password= password_hash.hash(body['password'])
     user=model.User(username=body['email'],password=hashed_password,email=body['email'],disabed=body['disable'])
     session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    schedule_update=model.dashboard_schedules(user_id=int(user.id),schedule_frequency=ScheduleEnum.disabled,is_active=False)
+    session.add(schedule_update)
     await session.commit()
     print("User Added to DB")
     return {"Status":200,"details":"User Added successfully"}
@@ -581,15 +588,44 @@ async def search_document(request:Request):
         hour += 12
     if body["period"]== "AM" and hour == 12:
         hour = 0
-    try:
-        if body["frequency"]=="Every day":
-            scheduler.add_job(read_root,trigger="cron",hour=hour,minute=minute,id="daily_job",kwargs={"username": username})
-        elif body["frequency"]=="Every 6 hours":
-            scheduler.add_job(read_root,trigger="interval",hours=6,start_date=datetime.now().replace(hour=hour, minute=minute, second=0),id="6hour_job",kwargs={"username": username})
-        elif body["frequency"]=="Every 12 hours":
-            scheduler.add_job(read_root,trigger="interval",hours=12,start_date=datetime.now().replace(hour=hour, minute=minute, second=0),id="12hour_job",kwargs={"username": username})
-        elif body["frequency"]=="Weekly":
-            scheduler.add_job(read_root,trigger="cron",day_of_week="mon",hour=hour,minute=minute,id="weekly_job",kwargs={"username": username})
-        print("Successfully added job in job store.")
-    except Exception as err:
-        print("You have error scheduling jobs:    ",err)
+    schedule_time=time(hour=hour, minute=minute)
+    now = datetime.now()
+    next_run_at = datetime(
+        year=now.year,
+        month=now.month,
+        day=now.day,
+        hour=schedule_time.hour,
+        minute=schedule_time.minute,
+        second=0,
+        microsecond=0
+)
+    schedule_time = datetime.combine(datetime.now().date(), schedule_time)
+    schedule_update=update(model.dashboard_schedules).where(model.dashboard_schedules.user_id==model.User.id).where(model.User.username==request.state.user).values(schedule_frequency=ScheduleEnum(body['frequency']),schedule_time=schedule_time,next_run_at=next_run_at,is_active=True)
+    await session.execute(schedule_update)
+    await session.commit()
+
+async def run_scheduled_jobs():
+    now = datetime.now()
+    result = await session.execute(
+        select(model.dashboard_schedules)
+        .where(
+            model.dashboard_schedules.next_run_at <= now,
+            model.dashboard_schedules.is_active == True
+        )
+    )
+
+    schedules = result.scalars().all()
+
+    for schedule in schedules:
+        user_id=schedule.user_id
+        result=await session.execute(select(model.User).where(model.User.id==int(user_id))) 
+        result=result.scalars().one()
+        await process_dashboard(result.username)
+
+
+
+try:
+    scheduler.add_job(run_scheduled_jobs,"cron",minute="*",id="dashboard_scheduler",replace_existing=True)
+    print("Successfully added job in job store.")
+except Exception as err:
+    print("You have error scheduling jobs:    ",err)

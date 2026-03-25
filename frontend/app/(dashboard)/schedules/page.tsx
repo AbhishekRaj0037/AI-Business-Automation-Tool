@@ -26,9 +26,12 @@ const DashboardPage = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        credentials: "include", // if using cookies
+        credentials: "include",
         body: JSON.stringify(data),
       });
+      if (res.status === 401) {
+        window.location.href = "/login";
+      }
 
       if (!res.ok) {
         throw new Error("Failed to save schedule");
@@ -43,7 +46,7 @@ const DashboardPage = () => {
   const [hour, setHour] = useState("01");
   const [minute, setMinute] = useState("00");
   const [period, setPeriod] = useState("AM");
-  const [frequency, setFrequency] = useState("Every day");
+  const [frequency, setFrequency] = useState("everyday");
   return (
     <div>
       <div className="text-black text-3xl pt-12">Schedules</div>
@@ -116,10 +119,10 @@ const DashboardPage = () => {
                   value={frequency}
                   onChange={(e) => setFrequency(e.target.value)}
                 >
-                  <option>Every day</option>
-                  <option>Every 6 hours</option>
-                  <option>Every 12 hours</option>
-                  <option>Weekly</option>
+                  <option value="everyday">Every day</option>
+                  <option value="every_six_hours">Every 6 hours</option>
+                  <option value="every_twelve_hours">Every 12 hours</option>
+                  <option value="weekly">Weekly</option>
                 </select>
               </div>
 
