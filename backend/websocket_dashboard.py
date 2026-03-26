@@ -10,7 +10,7 @@ class ConnectionManager:
         self.active_connections = {}
 
     async def connect(self, username: str, websocket: WebSocket):
-        await websocket.accept()
+        # await websocket.accept()
         if username not in self.active_connections:
             self.active_connections[username] = []
         self.active_connections[username].append(websocket)

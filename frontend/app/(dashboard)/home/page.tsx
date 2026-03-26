@@ -42,7 +42,7 @@ const DashboardPage = () => {
     };
     ws.onclose = (event) => {
       console.log("WebSocket closed");
-      console.log("Code:", event.code);
+      console.log("Code:", event);
       if (event.code === 1008) {
         window.location.href = "/login";
       }

@@ -10,7 +10,7 @@ from fastapi_sa_orm_filter.main import FilterCore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.executors.asyncio import AsyncIOExecutor
-from datetime import timezone,datetime,timedelta
+from datetime import timezone,datetime,timedelta,time
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select,update,desc
 from email.utils import parsedate_to_datetime
@@ -23,6 +23,7 @@ from pwdlib import PasswordHash
 from datetime import date
 import cloudinary.uploader
 from typing import List
+import time
 
 import hashlib
 import imaplib
@@ -30,7 +31,6 @@ import model
 import email
 import json
 import asyncio
-from datetime import time
 import boto3
 import jwt
 import os
@@ -173,7 +173,6 @@ async def get_dashboard_stats(username: str):
 
     queue = await websocket_dashboard.r.hgetall(queue_key)
     stats = await websocket_dashboard.r.hgetall(stats_key)
-
     return {
         "queue": queue,
         "stats": stats
@@ -530,29 +529,22 @@ async def search_document(request:Request):
 @app.websocket("/ws/dashboard")
 async def dashboard_ws(websocket:WebSocket):
     jwt_token = websocket.cookies.get("jwt_token")
-    await manager.connect(username,websocket)
+    await websocket.accept()
     if not jwt_token:
         await websocket.close(code=1008)
         return
-    
     try:
         payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        sername=payload.get("sub")
+        username=payload.get("sub")
         exp=payload.get("exp")
     except jwt.ExpiredSignatureError:
         await websocket.close(code=1008)
         return
+    await manager.connect(username,websocket)
     data=await get_dashboard_stats(username)
     await websocket.send_json({
         'username':username,'data':data
     })
-    async def receive_loop():
-        try:
-            while True:
-                msg = await websocket.receive_text()
-        except Exception:
-            pass
-
     async def token_monitor():
         try:
             remaining = exp - int(time.time())
@@ -560,14 +552,21 @@ async def dashboard_ws(websocket:WebSocket):
                 await asyncio.sleep(remaining)
             await websocket.send_json({"error": "token expired"})
             await websocket.close(code=1008)
-        except Exception:
-            pass
+        except Exception as e:
+            print("monitor error:", e)
 
-    receive_task = asyncio.create_task(receive_loop())
+    async def receive_loop():
+        try:
+            while True:
+                await websocket.receive_text()
+        except Exception as e:
+            print("Data receive error:", e)
+
     monitor_task = asyncio.create_task(token_monitor())
+    receive_task = asyncio.create_task(receive_loop())
 
     done, pending = await asyncio.wait(
-        [receive_task, monitor_task],
+        [monitor_task, receive_task],
         return_when=asyncio.FIRST_COMPLETED
     )
 
@@ -603,6 +602,7 @@ async def search_document(request:Request):
     schedule_update=update(model.dashboard_schedules).where(model.dashboard_schedules.user_id==model.User.id).where(model.User.username==request.state.user).values(schedule_frequency=ScheduleEnum(body['frequency']),schedule_time=schedule_time,next_run_at=next_run_at,is_active=True)
     await session.execute(schedule_update)
     await session.commit()
+    print("Successful time update")
 
 async def run_scheduled_jobs():
     now = datetime.now()
@@ -621,6 +621,18 @@ async def run_scheduled_jobs():
         result=await session.execute(select(model.User).where(model.User.id==int(user_id))) 
         result=result.scalars().one()
         await process_dashboard(result.username)
+        next_run_at=schedule.next_run_at
+        if schedule.schedule_frequency==ScheduleEnum.everyday:
+            next_run_at=next_run_at+timedelta(hours=24)
+        if schedule.schedule_frequency==ScheduleEnum.weekly:
+            next_run_at=next_run_at+timedelta(hours=168)
+        if schedule.schedule_frequency==ScheduleEnum.every_twelve_hours:
+            next_run_at=next_run_at+timedelta(hours=12)
+        if schedule.schedule_frequency==ScheduleEnum.every_six_hours:
+            next_run_at=next_run_at+timedelta(hours=6)  
+        next_run=update(model.dashboard_schedules).where(model.dashboard_schedules.id==schedule.id).values(last_run_at=schedule.next_run_at,next_run_at=next_run_at)
+        await session.execute(next_run)
+        await session.commit()
 
 
 
