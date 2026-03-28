@@ -9,35 +9,35 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections = {}
 
-    async def connect(self, username: str, websocket: WebSocket):
+    async def connect(self, userId: str, websocket: WebSocket):
         # await websocket.accept()
-        if username not in self.active_connections:
-            self.active_connections[username] = []
-        self.active_connections[username].append(websocket)
+        if userId not in self.active_connections:
+            self.active_connections[userId] = []
+        self.active_connections[userId].append(websocket)
 
-    def disconnect(self, username: str, websocket: WebSocket):
-        if username in self.active_connections:
-            self.active_connections[username].remove(websocket)
+    def disconnect(self, userId: str, websocket: WebSocket):
+        if userId in self.active_connections:
+            self.active_connections[userId].remove(websocket)
 
-    async def send(self, username: str, data: dict):
+    async def send(self, userId: str, data: dict):
         
-        if username in self.active_connections:
+        if userId in self.active_connections:
     
-            for ws in self.active_connections[username]:
-                await ws.send_json({'username':username,'data':data})
+            for ws in self.active_connections[userId]:
+                await ws.send_json({'userId':userId,'data':data})
 
 
 
 
 async def update_user_dashboard(
-    username: str,
+    userId: str,
     queue_changes: dict = None,
     stats_changes: dict = None
 ):
     today = date.today().isoformat()
 
-    queue_key = f"user:{username}:queue"
-    stats_key = f"user:{username}:stats:{today}"
+    queue_key = f"userId:{userId}:queue"
+    stats_key = f"userId:{userId}:stats:{today}"
 
     # 🔹 Update Queue Counters
     if queue_changes:
@@ -54,6 +54,6 @@ async def update_user_dashboard(
 
     # 🔹 Publish update event
     await r.publish(
-        f"user:{username}:updates",
-        json.dumps({"username": username})
+        f"userId:{userId}:updates",
+        json.dumps({"userId": userId})
     )

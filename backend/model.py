@@ -28,6 +28,7 @@ class User(Base):
     username=Column(String,nullable=False)
     password=Column(String,nullable=False)
     email=Column(String,unique=True,nullable=False)
+    profile_photo=Column(String,nullable=True)
     disabed=Column(Boolean,default=False)
 
     def __repr__(self):
@@ -37,6 +38,7 @@ class User(Base):
             f"username={self.username}, "
             f"password={self.password})>"
             f"email={self.email}, "
+            f"email={self.profile_photo}, "
             f"disabed={self.disabed}, "
         )
     

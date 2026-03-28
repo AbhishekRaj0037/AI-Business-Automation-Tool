@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket,Response,Cookie
+from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket,Response,Cookie,UploadFile,File
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
 from websocket_dashboard import ConnectionManager,update_user_dashboard,r
@@ -23,6 +23,7 @@ from pwdlib import PasswordHash
 from datetime import date
 import cloudinary.uploader
 from typing import List
+from io import BytesIO
 import time
 
 import hashlib
@@ -32,6 +33,7 @@ import email
 import json
 import asyncio
 import boto3
+import shutil
 import jwt
 import os
 
@@ -88,14 +90,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
         try:
             payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-            username=payload.get("sub")
-            if username is None:
+            userId=payload.get("user_id")
+            if userId is None:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid credentials"}
                 )
             
-            request.state.user = username
+            request.state.userId = userId
         except Exception as err:
             print("Error authenticating user: ",err)
             return JSONResponse(
@@ -166,10 +168,10 @@ job_defaults={
 scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=job_defaults)
 
 
-async def get_dashboard_stats(username: str):
+async def get_dashboard_stats(userId: str):
     today = date.today().isoformat()
-    queue_key = f"user:{username}:queue"
-    stats_key = f"user:{username}:stats:{today}"
+    queue_key = f"userId:{userId}:queue"
+    stats_key = f"userId:{userId}:stats:{today}"
 
     queue = await websocket_dashboard.r.hgetall(queue_key)
     stats = await websocket_dashboard.r.hgetall(stats_key)
@@ -180,18 +182,18 @@ async def get_dashboard_stats(username: str):
 
 async def redis_listener():
     pubsub =r.pubsub()
-    await pubsub.psubscribe("user:*:updates")
+    await pubsub.psubscribe("userId:*:updates")
 
     async for message in pubsub.listen():
         if message["type"] == "pmessage":
             data = json.loads(message["data"])
-            username = data["username"]
+            userId = data["userId"]
             
             # fetch latest stats from Redis
-            stats = await get_dashboard_stats(username)
+            stats = await get_dashboard_stats(userId)
             
             # push to correct websocket user
-            await manager.send(username, stats)
+            await manager.send(userId, stats)
             
 
 @app.on_event("startup")
@@ -235,10 +237,10 @@ def get_email_body(msg: Message) -> str:
 
 @app.get("/")
 async def read_root(request:Request):
-    await process_dashboard(request.state.user)
+    await process_dashboard(request.state.userId)
 
-async def process_dashboard(username):
-    print("Welcome ",username)
+async def process_dashboard(userId):
+    print("Welcome ",userId)
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)).limit(1))
     result=result.scalars().first()
     starting_uid_range=0
@@ -290,7 +292,7 @@ async def process_dashboard(username):
 
 @app.get("/get-all-reports")
 async def get_all_reports(request:Request,page:int=Query(1),limit:int=Query(4)):
-    print("Welcome ",request.state.user)
+    print("Welcome ",request.state.userId)
     offset=(page-1)*limit
     result=await session.execute(select(model.email_metadata).offset(offset).order_by(desc(model.email_metadata.imap_uid)).limit(limit))
     result=result.scalars().all()
@@ -298,7 +300,7 @@ async def get_all_reports(request:Request,page:int=Query(1),limit:int=Query(4)):
    
 @app.get("/get-reports-by-id")
 async def get_all_reports(request:Request,imap_uid:int=Query(1),page:int=Query(1),limit:int=Query(4)):
-    print("Welcome ",request.state.user)
+    print("Welcome ",request.state.userId)
     mail_result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
     mail_result=mail_result.scalars().first()
     offset=(page-1)*limit
@@ -327,7 +329,7 @@ async def get_reports(
     objects_filter: str =Query(default=''),
     db:AsyncSession=Depends(get_session),
 ) -> List[EmailMetaDataOut]:
-    print("Welcome ",request.state.user)
+    print("Welcome ",request.state.userId)
     filter_result=FilterCore(model.email_metadata,my_objects_filter)
     query=filter_result.get_query(objects_filter)
     db_obj=await session.execute(query)
@@ -341,7 +343,7 @@ async def get_mail(
     imap_uid:str,
     request:Request,
 ):  
-    print("Welcome ",request.state.user)
+    print("Welcome ",request.state.userId)
     mail_data=mail.fetch(imap_uid,'RFC822')
     raw=mail_data[1][0][1]
     raw_message=email.message_from_bytes(raw)
@@ -414,8 +416,8 @@ async def login_user(request:Request,response:Response):
         print("Password Incorrect")
         raise HTTPException(status_code=401,detail="Password Incorrect")
     
-    access_token_expires=datetime.now(timezone.utc)+timedelta(minutes=3)
-    user={"sub":result.username}
+    access_token_expires=datetime.now(timezone.utc)+timedelta(minutes=30)
+    user={"user_id":result.id,"username":result.username,"email_id":result.email}
     user.update({"exp":access_token_expires})
     encode_jwt_token=jwt.encode(user,JWT_SECRET_KEY,algorithm=ALGORITHM)
     user=model.Token(token=encode_jwt_token,user_id=result.id)
@@ -431,6 +433,44 @@ async def login_user(request:Request,response:Response):
     print("Added to DB")
     print("Login successfully")
     return {"Toke": encode_jwt_token,"Type":"Bearer","message":"Login Successful"}
+
+@app.get("/user-details")
+async def user_details(request:Request):
+    result=await session.execute(select(model.User).where(model.User.id==request.state.userId))
+    result=result.scalars().first()
+    user={
+        "email":result.email,
+        "profile_photo_url": result.profile_photo,
+        "username":result.username
+    }
+    
+    return user
+
+@app.post("/upload-file")
+async def update_file(request: Request,file:UploadFile=File(...)):
+    try:
+        file_bytes = await file.read()
+        file_stream = BytesIO(file_bytes)
+
+        result = await cloudinary.uploader.upload(
+            file_stream,
+            asset_folder="AI Business Automation Assistant",
+            public_id=file.filename,
+            overwrite=True,
+            resource_type="auto"
+        )
+
+        url = result["url"]
+        result=update(model.User).where(model.User.id == int(request.state.userId)).values(profile_photo=url)
+        await session.execute(result)
+        await session.commit()
+        breakpoint()
+        return {"url": url}
+
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # @app.get("/me")
 # async def get_current_user(jwt_token:str=Cookie(None)):
@@ -451,7 +491,7 @@ async def login_user(request:Request,response:Response):
 
 @app.post("/update-report-status")
 async def update_report_status(request:Request):
-    print("Welcome ",request.state.user)
+    print("Welcome ",request.state.userId)
     body=await request.json()
     report_id=body["report_id"]
     report_status=StatusEnum[body["report_status"]]
@@ -462,9 +502,9 @@ async def update_report_status(request:Request):
 
 @app.post("/analyse-report")
 async def analyse_report(request:Request):
-    print("Welcome ",request.state.user)
+    print("Welcome ",request.state.userId)
     try:
-        await update_user_dashboard(username,queue_changes={
+        await update_user_dashboard(request.state.userId,queue_changes={
                     "pending":1,
                 })
         loader=docloader.PyPDFLoader("Policy-P000188666627.pdf")
@@ -484,12 +524,12 @@ async def analyse_report(request:Request):
             vectorstore = FAISS.from_documents(doc_chunks, embeddings)
             vectorstore.save_local(VECTOR_DB)
             print("Created new vector DB!")
-        await update_user_dashboard(username,stats_changes={
+        await update_user_dashboard(request.state.userId,stats_changes={
                     "completed":1,
                     "pending":-1
                 })
     except Exception as err:
-        await update_user_dashboard(username,queue_changes={
+        await update_user_dashboard(request.state.userId,queue_changes={
                     "pending":-1,
                 })
         return {"Error ",err}
@@ -498,7 +538,7 @@ async def analyse_report(request:Request):
 
 @app.post("/query-document")
 async def search_document(request:Request):
-    print("Welcome ",request.state.user)
+    print("Welcome ",request.state.userId)
     body=await request.json()
     if os.path.exists(VECTOR_DB):
         vectorstore=FAISS.load_local(
@@ -535,15 +575,15 @@ async def dashboard_ws(websocket:WebSocket):
         return
     try:
         payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-        username=payload.get("sub")
+        userId=payload.get("user_id")
         exp=payload.get("exp")
     except jwt.ExpiredSignatureError:
         await websocket.close(code=1008)
         return
-    await manager.connect(username,websocket)
-    data=await get_dashboard_stats(username)
+    await manager.connect(userId,websocket)
+    data=await get_dashboard_stats(userId)
     await websocket.send_json({
-        'username':username,'data':data
+        'userId':userId,'data':data
     })
     async def token_monitor():
         try:
@@ -573,13 +613,13 @@ async def dashboard_ws(websocket:WebSocket):
     for task in pending:
         task.cancel()
 
-    manager.disconnect(username, websocket)
+    manager.disconnect(userId, websocket)
 
 
 
 @app.post("/schedule-jobs")
 async def search_document(request:Request):
-    print("Welcome ",request.state.user)
+    print("Welcome ",request.state.userId)
     body=await request.json()
     hour = int(body["hour"])
     minute = int(body["minute"])
