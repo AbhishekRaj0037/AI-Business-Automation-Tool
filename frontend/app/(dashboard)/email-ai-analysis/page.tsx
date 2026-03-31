@@ -41,47 +41,9 @@ const DashboardPage = () => {
   return (
     <div>
       <div className="text-black text-3xl pt-12">Emails - Inbox</div>
-      <div className="flex gap-4 pt-5 ">
-        <div className="text-black text-l pt-4 whitespace-nowrap mb-2">
-          Real-time visibility into fetched emails and AI analysis status
-        </div>
-        <div className="flex items-center border text-black border-gray-300 h-15 rounded-md px-6 mb-2">
-          <span className="text-l whitespace-nowrap w-0">
-            Next fetch: Today 6:00 PM
-          </span>
-          <span className="pl-76">
-            <Link
-              href="/update-dashboard"
-              className="bg-blue-600 text-white px-10 py-3 rounded-lg inline-flex items-center gap-2 hover:bg-blue-700 transition"
-            >
-              <div className="flex items-center justify-center">
-                <svg
-                  className="center"
-                  width="20"
-                  height="25"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org"
-                >
-                  <path
-                    d="M19 12H5"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M12 19l-7-7 7-7"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-            </Link>
-          </span>
-        </div>
+
+      <div className="text-black text-l pt-4 whitespace-nowrap mb-2">
+        Real-time visibility into fetched emails and AI analysis status
       </div>
 
       <div className="mb-2">

@@ -9,17 +9,76 @@ type User = {
   username: string;
 };
 
+const handleSubmit = async (e: any) => {
+  e.preventDefault();
+
+  const form = e.target;
+  const formData = new FormData(form);
+
+  const data = {
+    current_password: formData.get("current_password")?.toString().trim(),
+    new_password: formData.get("new_password")?.toString().trim(),
+    confirm_new_password: formData
+      .get("confirm_new_password")
+      ?.toString()
+      .trim(),
+  };
+
+  console.log("FORM DATA:", data);
+
+  // 🔴 Check empty fields
+  if (
+    !data.current_password ||
+    !data.new_password ||
+    !data.confirm_new_password
+  ) {
+    alert("All fields are required");
+    return;
+  }
+
+  // 🔴 Check password match
+  if (data.new_password !== data.confirm_new_password) {
+    alert("Passwords do not match");
+    return;
+  }
+
+  try {
+    const res = await fetch("http://localhost:8000/change-password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify(data),
+    });
+
+    const result = await res.json();
+
+    if (!res.ok) {
+      alert(result.message || "Error");
+      return;
+    }
+
+    alert("Password updated successfully");
+    form.reset();
+  } catch (err) {
+    console.error(err);
+    alert("Something went wrong");
+  }
+};
+
 const DashboardPage = () => {
   const [userDetail, setdetail] = useState<User | null>(null);
   const [profile_photo, set_Photo] = useState<File | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      set_Photo(e.target.files[0]); // ✅ store file directly
+      set_Photo(e.target.files[0]);
     }
   };
+  const uploadImage = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
 
-  const uploadImage = async () => {
     if (!profile_photo) return;
 
     const formData = new FormData();
@@ -35,15 +94,12 @@ const DashboardPage = () => {
     );
 
     const data = await res.json();
-    console.log(data);
 
-    // update state with new image URL
     setdetail((prev) => ({
       ...prev!,
       profile_photo_url: data.url,
     }));
 
-    // optional: clear file
     set_Photo(null);
   };
 
@@ -61,10 +117,9 @@ const DashboardPage = () => {
         throw new Error("Failed to fetch data");
       }
       const data = await res.json();
-      console.log("Data===>", data);
       setdetail({
         email: data.email,
-        profile_photo_url: data.profile_photo,
+        profile_photo_url: data.profile_photo_url,
         username: data.username,
       });
     };
@@ -101,7 +156,7 @@ const DashboardPage = () => {
 
             {/* Submit Button */}
             <button
-              type="submit"
+              type="button"
               onClick={uploadImage}
               className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
             >
@@ -112,7 +167,7 @@ const DashboardPage = () => {
       </div>
       <div className="border text-black border-gray-300 h-80 rounded-md pl-4">
         <span className="text-2xl">Change Password</span>
-        <form className="max-w-md mx-auto space-y-6">
+        <form className="max-w-md mx-auto space-y-6" onSubmit={handleSubmit}>
           {/* Current Password */}
           <div>
             <label className="block text-gray-700 font-medium mb-2">
@@ -120,6 +175,7 @@ const DashboardPage = () => {
             </label>
             <input
               type="password"
+              name="current_password"
               placeholder="Enter current password"
               className="w-full border border-gray-300 rounded-lg px-4 py-2 
                  focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -133,6 +189,7 @@ const DashboardPage = () => {
             </label>
             <input
               type="password"
+              name="new_password"
               placeholder="Enter new password"
               className="w-full border border-gray-300 rounded-lg px-4 py-2 
                  focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -146,6 +203,7 @@ const DashboardPage = () => {
             </label>
             <input
               type="password"
+              name="confirm_new_password"
               placeholder="Confirm new password"
               className="w-full border border-gray-300 rounded-lg px-4 py-2 
                  focus:outline-none focus:ring-2 focus:ring-blue-500"

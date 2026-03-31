@@ -3,8 +3,23 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Menu, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+
+type User = {
+  email: string;
+  profile_photo_url: string;
+  username: string;
+  schedule: {
+    schedule_time: string;
+    id: Number;
+    next_run_at: string;
+    schedule_frequency: string;
+    last_run_at: string;
+    user_id: Number;
+  };
+};
 
 const menuItems = [
   {
@@ -46,6 +61,60 @@ const menuItems = [
 
 const Menubar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [userDetail, setdetail] = useState<User | null>(null);
+
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  const handleLogout = async () => {
+    setLoading(true);
+
+    try {
+      const res = await fetch("http://localhost:8000/logout", {
+        method: "POST",
+        credentials: "include", // important for cookies
+      });
+
+      if (!res.ok) {
+        alert("Logout failed");
+        return;
+      }
+
+      // redirect to login page
+      router.push("/login");
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const fetchSchedule = async () => {
+      const res = await fetch(`http://localhost:8000/user-details`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      if (res.status === 401) {
+        window.location.href = "/login";
+      }
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch data");
+      }
+      const data = await res.json();
+      setdetail({
+        email: data.email,
+        profile_photo_url: data.profile_photo_url,
+        username: data.username,
+        schedule: data.schedule,
+      });
+    };
+
+    fetchSchedule();
+  }, []);
+
   return (
     <div className=" text-sm">
       <div className="md:hidden flex items-center justify-between p-4 border-b">
@@ -100,34 +169,55 @@ const Menubar = () => {
               Dashboard Update
             </span>
           </h4>
-          <div>
-            <label className="radio">
-              <input type="radio" name="update" />
-              <span className="custom-radio"></span>
-              Today – 6:00 PM
-            </label>
+          <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+            <h2 className="text-lg font-semibold mb-4 text-gray-800">
+              Schedule Details
+            </h2>
+
+            <div className="space-y-2 text-gray-700">
+              <p>
+                <span className="font-medium">Last Run:</span>{" "}
+                {userDetail?.schedule?.last_run_at || "N/A"}
+              </p>
+
+              <p>
+                <span className="font-medium">Next Run:</span>{" "}
+                {userDetail?.schedule?.next_run_at || "N/A"}
+              </p>
+
+              <p>
+                <span className="font-medium">Frequency:</span>{" "}
+                {userDetail?.schedule?.schedule_frequency || "N/A"}
+              </p>
+
+              <p>
+                <span className="font-medium">Time:</span>{" "}
+                {userDetail?.schedule?.schedule_time || "N/A"}
+              </p>
+            </div>
           </div>
           <div>
             <label className="radio">
-              <input type="radio" name="update" />
               <span className="custom-radio"></span>
-              Every 6 hours
             </label>
-          </div>
-          <div className="pt-2 text-blue-400">
-            <Link href="/change-schedule">Change schedule</Link>
           </div>
         </div>
-        <div className="mt-auto flex items-center gap-2 px-2 text-gray-500 pt-19 pl-8">
+        <div className="mt-auto flex items-center gap-2 px-2 text-gray-500 pt-19">
           <img
-            src="https://i.pravatar.cc/40"
+            src={userDetail?.profile_photo_url}
             className="w-10 h-10 rounded-full"
           />
           <div className="lg:block">
-            <strong>John Doe</strong>
-            <p className="text-xs">john.doe@example.com</p>
+            <strong>{userDetail?.username}</strong>
           </div>
         </div>
+        <button
+          onClick={handleLogout}
+          disabled={loading}
+          className="px-2 py-2 bg-red-500 text-white rounded-lg hover:bg-red-400 transition mr-100"
+        >
+          {loading ? "Logging out..." : "Logout"}
+        </button>
       </aside>
     </div>
   );

@@ -388,13 +388,14 @@ async def get_mail(
 @app.post("/create-user")
 async def create_user(request: Request):
     body = await request.json()
+    breakpoint()
     result=await session.execute(select(model.User).where(model.User.email==body['email']))
     result=result.scalars().all()
     if result != []:
         print("User already exsist")
         return
     hashed_password= password_hash.hash(body['password'])
-    user=model.User(username=body['email'],password=hashed_password,email=body['email'],disabed=body['disable'])
+    user=model.User(username=body['name'],password=hashed_password,email=body['email'])
     session.add(user)
     await session.commit()
     await session.refresh(user)
@@ -434,37 +435,62 @@ async def login_user(request:Request,response:Response):
     print("Login successfully")
     return {"Toke": encode_jwt_token,"Type":"Bearer","message":"Login Successful"}
 
+
+@app.post("/change-password")
+async def change_password(request: Request):
+    body = await request.json()
+    result=await session.execute(select(model.User).where(model.User.id==int(request.state.userId)))
+    result=result.scalars().first()
+    if result == []:
+        print("User doesn't exsist")
+        return
+    if body["new_password"] != body["confirm_new_password"]:
+        print("New password and confirm new password don't match")
+    if password_hash.verify(body['current_password'],result.password)==False:
+        print("Password Incorrect")
+        raise HTTPException(status_code=401,detail="Password Incorrect")
+    hashed_password= password_hash.hash(body['new_password'])
+    result=update(model.User).where(model.User.id == request.state.userId).values(password=hashed_password)
+    await session.execute(result)
+    await session.commit()
+    print("Password changed successfully")
+    return {"Status":200,"details":"Password changed successfully"}
+
 @app.get("/user-details")
 async def user_details(request:Request):
     result=await session.execute(select(model.User).where(model.User.id==request.state.userId))
     result=result.scalars().first()
+    dashboard_detail=await session.execute(select(model.dashboard_schedules).where(model.User.id==request.state.userId))
+    dashboard_detail=dashboard_detail.scalars().first()
     user={
         "email":result.email,
         "profile_photo_url": result.profile_photo,
-        "username":result.username
+        "username":result.username,
+        "schedule":dashboard_detail
     }
-    
     return user
+
+@app.post("/logout")
+def logout(response: Response):
+    response.delete_cookie("jwt_token")
+    return {"message": "Logged out"}
 
 @app.post("/upload-file")
 async def update_file(request: Request,file:UploadFile=File(...)):
     try:
         file_bytes = await file.read()
         file_stream = BytesIO(file_bytes)
-
-        result = await cloudinary.uploader.upload(
+        result = cloudinary.uploader.upload(
             file_stream,
             asset_folder="AI Business Automation Assistant",
             public_id=file.filename,
             overwrite=True,
             resource_type="auto"
         )
-
         url = result["url"]
         result=update(model.User).where(model.User.id == int(request.state.userId)).values(profile_photo=url)
         await session.execute(result)
         await session.commit()
-        breakpoint()
         return {"url": url}
 
     except Exception as e:
