@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket,Response,Cookie,UploadFile,File
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse,StreamingResponse
 from websocket_dashboard import ConnectionManager,update_user_dashboard,r
 from fastapi_sa_orm_filter.operators import Operators as ops
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,11 +20,11 @@ import websocket_dashboard
 from model import StatusEnum,ScheduleEnum
 from schemas import EmailMetaDataOut
 from pwdlib import PasswordHash
-from datetime import date
+from datetime import date,time
 import cloudinary.uploader
 from typing import List
 from io import BytesIO
-import time
+# import time
 
 import hashlib
 import imaplib
@@ -237,7 +237,18 @@ def get_email_body(msg: Message) -> str:
 
 @app.get("/")
 async def read_root(request:Request):
+    await websocket_dashboard.set_task_status(request.state.userId,"true")
     await process_dashboard(request.state.userId)
+
+@app.get("/stop-fetching")
+async def stop_fetching(request:Request):
+    await websocket_dashboard.set_task_status(request.state.userId,"false")
+    return {"status":"stopped"}
+
+@app.get("/fetch-status")
+async def fetch_status(request:Request):
+    status=await websocket_dashboard.get_task_status(request.state.userId)
+    return {"is_fetching":status=="true"}
 
 async def process_dashboard(userId):
     print("Welcome ",userId)
@@ -250,6 +261,12 @@ async def process_dashboard(userId):
     # uids=uids[0].decode('utf-8')
     uid_list=uids[1][0].split()
     for uid in uid_list:
+        status=await websocket_dashboard.get_task_status(userId)
+        print("user status===",status)
+        if status != "true":
+            print(f"Stopped fetching for {userId}")
+            break
+        print(f"Fetching emails for {userId}...")
         mail_data=mail.fetch(uid,'RFC822')
         raw=mail_data[1][0][1]
         raw_message=email.message_from_bytes(raw)
@@ -665,6 +682,7 @@ async def search_document(request:Request):
         microsecond=0
 )
     schedule_time = datetime.combine(datetime.now().date(), schedule_time)
+    breakpoint
     schedule_update=update(model.dashboard_schedules).where(model.dashboard_schedules.user_id==model.User.id).where(model.User.username==request.state.user).values(schedule_frequency=ScheduleEnum(body['frequency']),schedule_time=schedule_time,next_run_at=next_run_at,is_active=True)
     await session.execute(schedule_update)
     await session.commit()

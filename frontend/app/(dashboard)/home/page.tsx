@@ -26,6 +26,22 @@ const DashboardPage = () => {
     null,
   );
   const [data, setData] = useState(null);
+  const [isFetching, setIsFetching] = useState(false);
+  const handleToggle = async () => {
+    if (!isFetching) {
+      setIsFetching(true);
+      await fetch("http://localhost:8000/", {
+        cache: "no-store",
+        credentials: "include",
+      });
+    } else {
+      setIsFetching(false);
+      await fetch("http://localhost:8000/stop-fetching", {
+        cache: "no-store",
+        credentials: "include",
+      });
+    }
+  };
   useEffect(() => {
     const ws = new WebSocket(`ws://localhost:8000/ws/dashboard`);
     ws.onopen = () => {
@@ -91,17 +107,10 @@ const DashboardPage = () => {
           <span className="text-2xl pl-2">Recent Reports</span>
           <span className="pl-100">
             <button
-              onClick={async () => {
-                const res = await fetch("http://localhost:8000/", {
-                  method: "GET",
-                  credentials: "include",
-                });
-                const data = await res.json();
-                console.log(data);
-              }}
+              onClick={handleToggle}
               className="bg-blue-600 text-white px-3 py-3 rounded-lg inline-flex items-center gap-2 hover:bg-blue-700 transition mt-3"
             >
-              Fetch Dashboard Now
+              {isFetching ? "Stop Fetching" : "Fetch Dashboard Now"}
             </button>
           </span>
         </div>

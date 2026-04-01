@@ -57,3 +57,11 @@ async def update_user_dashboard(
         f"userId:{userId}:updates",
         json.dumps({"userId": userId})
     )
+
+
+
+async def set_task_status(user_id: str, status: str):
+    await r.set(f"fetching:{user_id}", status)
+
+async def get_task_status(user_id: str) -> str | None:
+    return await r.get(f"fetching:{user_id}")

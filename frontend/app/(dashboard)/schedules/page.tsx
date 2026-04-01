@@ -7,6 +7,7 @@ import Link from "next/link";
 
 const DashboardPage = () => {
   const router = useRouter();
+  const [buttonStatus, setButtonStatus] = useState(false);
   useEffect(() => {
     async function fetchData() {}
   });
@@ -19,6 +20,7 @@ const DashboardPage = () => {
       period,
       frequency,
     };
+    setButtonStatus(true);
 
     try {
       const res = await fetch("http://localhost:8000/schedule-jobs", {
@@ -39,6 +41,7 @@ const DashboardPage = () => {
 
       const result = await res.json();
       console.log("Saved:", result);
+      setButtonStatus(false);
     } catch (err) {
       console.error("Error:", err);
     }
@@ -132,7 +135,7 @@ const DashboardPage = () => {
                   type="submit"
                   className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
                 >
-                  Save Schedule
+                  {buttonStatus ? "Scheduling please wait..." : "Save Schedule"}
                 </button>
               </div>
             </form>
