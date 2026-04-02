@@ -23,14 +23,15 @@ const DashboardPage = () => {
     setButtonStatus(true);
 
     try {
-      const res = await fetch("http://localhost:8000/schedule-jobs", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
+      const [res] = await Promise.all([
+        fetch("http://localhost:8000/schedule-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(data),
+        }),
+        new Promise((resolve) => setTimeout(resolve, 2000)), // minimum 2 sec delay
+      ]);
       if (res.status === 401) {
         window.location.href = "/login";
       }

@@ -36,7 +36,6 @@ const handleSubmit = async (e: any) => {
     return;
   }
 
-  // 🔴 Check password match
   if (data.new_password !== data.confirm_new_password) {
     alert("Passwords do not match");
     return;
@@ -131,7 +130,7 @@ const DashboardPage = () => {
     <div>
       <div className="text-black text-3xl pt-12 pb-3">Settings</div>
       <div className="mb-2">
-        <div className="border text-black border-gray-300 h-100 rounded-md pl-4">
+        <div className="border text-black border-gray-300 h-85 rounded-md pl-4">
           <span className="text-2xl">Profile Image</span>
           <div className="mt-auto flex items-center gap-2 px-2 text-gray-500 pl-4 pb-2">
             <img
@@ -165,7 +164,7 @@ const DashboardPage = () => {
           </form>
         </div>
       </div>
-      <div className="border text-black border-gray-300 h-80 rounded-md pl-4">
+      <div className="border text-black border-gray-300 h-95 rounded-md pl-4">
         <span className="text-2xl">Change Password</span>
         <form className="max-w-md mx-auto space-y-6" onSubmit={handleSubmit}>
           {/* Current Password */}

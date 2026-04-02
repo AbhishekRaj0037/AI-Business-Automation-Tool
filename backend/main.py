@@ -91,13 +91,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
         try:
             payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
             userId=payload.get("user_id")
+            username=payload.get("username")
             if userId is None:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid credentials"}
                 )
-            
             request.state.userId = userId
+            request.state.username=username
         except Exception as err:
             print("Error authenticating user: ",err)
             return JSONResponse(
@@ -682,8 +683,23 @@ async def search_document(request:Request):
         microsecond=0
 )
     schedule_time = datetime.combine(datetime.now().date(), schedule_time)
-    breakpoint
-    schedule_update=update(model.dashboard_schedules).where(model.dashboard_schedules.user_id==model.User.id).where(model.User.username==request.state.user).values(schedule_frequency=ScheduleEnum(body['frequency']),schedule_time=schedule_time,next_run_at=next_run_at,is_active=True)
+    # schedule_update=update(model.dashboard_schedules).where(model.dashboard_schedules.user_id==model.User.id).where(model.User.username==request.state.username).values(schedule_frequency=ScheduleEnum(body['frequency']),schedule_time=schedule_time,next_run_at=next_run_at,is_active=True)
+    schedule_update = (
+    update(model.dashboard_schedules)
+    .where(
+        model.dashboard_schedules.user_id == (
+            select(model.User.id)
+            .where(model.User.username == request.state.username)
+            .scalar_subquery()
+        )
+    )
+    .values(
+        schedule_frequency=ScheduleEnum(body['frequency']),
+        schedule_time=schedule_time,
+        next_run_at=next_run_at,
+        is_active=True
+    )
+)
     await session.execute(schedule_update)
     await session.commit()
     print("Successful time update")
