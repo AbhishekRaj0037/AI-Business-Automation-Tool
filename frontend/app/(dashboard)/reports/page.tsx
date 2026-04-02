@@ -4,25 +4,48 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-const DashboardPage = () => {
-  const router = useRouter();
-  const [data, setData] = useState(null);
+async function getReports(page: any) {
+  const res = await fetch(
+    `http://localhost:8000/get-all-ai-reports?page=${page}&limit=4`,
+    {
+      cache: "no-store",
+      credentials: "include",
+    },
+  );
+  if (res.status === 401) {
+    window.location.href = "/login";
+  }
 
+  if (!res.ok) {
+    throw new Error("Failed to fetch data");
+  }
+  const data = await res.json();
+  return data;
+}
+
+const DashboardPage = () => {
+  const [reports, setReportData] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const handleViewFile = async (reportId: any) => {
+    try {
+      const response = await fetch(
+        `/get-ai-reports-by-id?report_id=${reportId}`,
+      );
+      const data = await response.json();
+      setSelectedFile(data.url);
+    } catch (error) {
+      console.error("Failed to fetch signed URL:", error);
+    }
+  };
   useEffect(() => {
     async function fetchData() {
-      const res = await fetch("http://localhost:8000/me", {
-        method: "GET",
-        credentials: "include",
-      });
-      const result = await res.json();
-      if (!res.ok) {
-        router.push("/login");
-        return;
-      }
-      setData(result);
+      const mails_Data = await getReports(page);
+      setReportData(mails_Data);
     }
     fetchData();
-  }, []);
+  }, [page]);
+
   return (
     <div>
       <div className="text-black text-3xl pt-12 pb-3">Generated Reports</div>
@@ -64,48 +87,54 @@ const DashboardPage = () => {
         <thead className="bg-gray-100 text-center">
           <tr>
             <th className="border px-4 py-2 text-center">Date & Time</th>
+            <th className="border px-4 py-2 text-center">Report Name</th>
             <th className="border px-4 py-2 text-center">Report Type</th>
-            <th className="border px-4 py-2 text-center">Email Processed</th>
+            <th className="border px-4 py-2 text-center">Updated At</th>
+            <th className="border px-4 py-2 text-center">View</th>
           </tr>
         </thead>
         <tbody>
-          <tr className="border-t">
-            <td className="border px-4 py-2 text-green-600 text-center">
-              Today 3:45 PM
-            </td>
-            <td className="border px-4 py-2 text-center">
-              Daily Email Summary
-            </td>
-            <td className="border px-4 py-2 text-center">
-              <a href="/report/1" className="text-blue-600 hover:underline">
-                View Report
-              </a>
-            </td>
-          </tr>
-
-          <tr className="border-t">
-            <td className="border px-4 py-2 text-yellow-600 text-center">
-              Today 1:20 PM
-            </td>
-            <td className="border px-4 py-2 text-center">
-              Daily Email Summary
-            </td>
-            <td className="border px-4 py-2 text-center">
-              <a
-                href="/report/1"
-                className="text-blue-600 hover:underline text-center"
-              >
-                View Report
-              </a>
-            </td>
-          </tr>
+          {reports.map((report: any) => (
+            <tr className="border-t" key={report.id}>
+              <td className="border px-4 py-2 text-green-600">
+                {report.generated_at}
+              </td>
+              <td className="border px-4 py-2">{report.report_name}</td>
+              <td className="border px-4 py-2">{report.report_type}</td>
+              <td className="border px-4 py-2">{report.updated_at}</td>
+              <td className="border px-4 py-2">
+                <div className="flex justify-center items-center h-full">
+                  <button
+                    onClick={() => handleViewFile(report.id)}
+                    className="text-blue-600 hover:underline"
+                  >
+                    👁
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
+      {selectedFile && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50">
+          {/* Close button */}
+          <button
+            onClick={() => setSelectedFile(null)}
+            className="absolute top-5 right-5 text-white text-2xl"
+          >
+            ✖
+          </button>
+
+          {/* File Viewer */}
+          <div className="bg-white w-[80%] h-[80%] rounded-lg overflow-hidden shadow-lg">
+            {/* PDF / general viewer */}
+            <iframe src={selectedFile} className="w-full h-full" />
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between px-6 py-4 border-t rounded-b-xl text-black">
         {/* Left side */}
-        <span className="text-sm text-gray-600">
-          Showing 1 to 10 of 50 entries
-        </span>
 
         {/* Right side Pagination */}
         <div className="flex items-center gap-2">

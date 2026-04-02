@@ -10,7 +10,6 @@ engine=create_async_engine(DBUrl)
 
 
 Session=async_sessionmaker(engine)
-session=Session()
 
 async def init_db():
     async with session() as session:

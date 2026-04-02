@@ -1,6 +1,7 @@
-from sqlalchemy import Column,Integer,String,Boolean,ForeignKey,DateTime,BigInteger
+from sqlalchemy import Column,Integer,String,Boolean,ForeignKey,DateTime,BigInteger,Text
 from sqlalchemy.orm import declarative_base,mapped_column,Mapped
 from enum import Enum
+import datetime
 
 Base=declarative_base()
 
@@ -123,3 +124,26 @@ class dashboard_schedules(Base):
             f"next_run_at={self.next_run_at},"
             f"is_active={self.is_active},"
         )
+    
+class reports(Base):
+    __tablename__="generated_reports"
+    id=Column(Integer,primary_key=True)
+    user_id=Column(Integer,ForeignKey("User.id"))
+    report_name=Column(String)
+    report_type=Column(String, nullable=False)
+    report_summary= Column(Text, nullable=True)
+    generated_at= Column(DateTime, default=None)
+    updated_at=Column(DateTime,default=None)
+    
+    def __repr__(self):
+        return (
+            f"<generated_reports("
+            f"id={self.id}, "
+            f"user_id={self.user_id}, "
+            f"report_name={self.report_name}, "
+            f"report_type={self.report_type}, "
+            f"summary={self.report_summary}, "
+            f"generated_at={self.generated_at}, "
+            f"updated_at={self.updated_at}, "
+        )
+

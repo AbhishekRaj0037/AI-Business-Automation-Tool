@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket,Response,Cookie,UploadFile,File
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import JSONResponse,StreamingResponse
+from fastapi.responses import JSONResponse
 from websocket_dashboard import ConnectionManager,update_user_dashboard,r
 from fastapi_sa_orm_filter.operators import Operators as ops
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,18 +14,17 @@ from datetime import timezone,datetime,timedelta,time
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select,update,desc
 from email.utils import parsedate_to_datetime
-from DataBase import session,get_session
-from FileUpload import cloudinary
+from DataBase import get_session,Session
+from typing import Annotated
 import websocket_dashboard
 from model import StatusEnum,ScheduleEnum
 from schemas import EmailMetaDataOut
 from pwdlib import PasswordHash
 from datetime import date,time
+import cloudinary
 import cloudinary.uploader
 from typing import List
 from io import BytesIO
-# import time
-
 import hashlib
 import imaplib
 import model
@@ -59,6 +58,18 @@ password=os.getenv("password")
 aws_access_key=os.getenv("aws_access_key")
 aws_secret_key=os.getenv("aws_secret_key")
 aws_region=os.getenv("aws_region")
+
+cloud_name=os.getenv("cloud_name")
+api_key=os.getenv("api_key")
+api_secret=os.getenv("api_secret")
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+cloudinary.config( 
+  cloud_name = cloud_name,
+  api_key = api_key,
+  api_secret = api_secret,
+)
 
 
 s3 = boto3.client(
@@ -237,21 +248,21 @@ def get_email_body(msg: Message) -> str:
     
 
 @app.get("/")
-async def read_root(request:Request):
+async def read_root(request:Request,session: SessionDep):
     await websocket_dashboard.set_task_status(request.state.userId,"true")
-    await process_dashboard(request.state.userId)
+    await process_dashboard(request.state.userId,session,"manual")
 
 @app.get("/stop-fetching")
-async def stop_fetching(request:Request):
+async def stop_fetching(request:Request,session: SessionDep):
     await websocket_dashboard.set_task_status(request.state.userId,"false")
     return {"status":"stopped"}
 
 @app.get("/fetch-status")
-async def fetch_status(request:Request):
+async def fetch_status(request:Request,session: SessionDep):
     status=await websocket_dashboard.get_task_status(request.state.userId)
     return {"is_fetching":status=="true"}
 
-async def process_dashboard(userId):
+async def process_dashboard(userId,session,fetch_type):
     print("Welcome ",userId)
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)).limit(1))
     result=result.scalars().first()
@@ -259,12 +270,10 @@ async def process_dashboard(userId):
     if result is not None:
          starting_uid_range=result.imap_uid
     uids=mail.uid('search', None, f'UID {starting_uid_range + 1}:*')
-    # uids=uids[0].decode('utf-8')
     uid_list=uids[1][0].split()
     for uid in uid_list:
         status=await websocket_dashboard.get_task_status(userId)
-        print("user status===",status)
-        if status != "true":
+        if fetch_type== "manual" and status != "true":
             print(f"Stopped fetching for {userId}")
             break
         print(f"Fetching emails for {userId}...")
@@ -285,7 +294,6 @@ async def process_dashboard(userId):
             report_data=None
             report_data=model.email_metadata(imap_uid=int(uid),mail_from=mail_from,subject=subject,received_at=received_at,body=formatted_body)
             session.add(report_data)
-            await session.commit()
             for part in raw_message.walk():
                 if part.get_content_maintype() == "multipart":
                     continue
@@ -299,7 +307,6 @@ async def process_dashboard(userId):
                         content_type = part.get_content_type()
                         file_data=model.email_attachments_metadata(imap_uid=int(uid),file_name=filename,file_type=content_type,file_size=len(file_bytes),status=StatusEnum.incomplete,checksum_sha256="!231231231231!")
                         session.add(file_data)
-                        await session.commit()
                     except Exception as e:
                         print("Error:  ",e)
             await update_user_dashboard(username,stats_changes={
@@ -309,7 +316,7 @@ async def process_dashboard(userId):
 
 
 @app.get("/get-all-reports")
-async def get_all_reports(request:Request,page:int=Query(1),limit:int=Query(4)):
+async def get_all_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(4)):
     print("Welcome ",request.state.userId)
     offset=(page-1)*limit
     result=await session.execute(select(model.email_metadata).offset(offset).order_by(desc(model.email_metadata.imap_uid)).limit(limit))
@@ -317,7 +324,7 @@ async def get_all_reports(request:Request,page:int=Query(1),limit:int=Query(4)):
     return result
    
 @app.get("/get-reports-by-id")
-async def get_all_reports(request:Request,imap_uid:int=Query(1),page:int=Query(1),limit:int=Query(4)):
+async def get_all_reports(session: SessionDep,request:Request,imap_uid:int=Query(1),page:int=Query(1),limit:int=Query(4)):
     print("Welcome ",request.state.userId)
     mail_result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
     mail_result=mail_result.scalars().first()
@@ -343,9 +350,9 @@ async def get_all_reports(request:Request,imap_uid:int=Query(1),page:int=Query(1
 
 @app.post("/get-reports")
 async def get_reports(
+    session: SessionDep,
     request:Request,
     objects_filter: str =Query(default=''),
-    db:AsyncSession=Depends(get_session),
 ) -> List[EmailMetaDataOut]:
     print("Welcome ",request.state.userId)
     filter_result=FilterCore(model.email_metadata,my_objects_filter)
@@ -358,6 +365,7 @@ async def get_reports(
 
 @app.post("/fetch-mail-data")
 async def get_mail(
+    session: SessionDep,
     imap_uid:str,
     request:Request,
 ):  
@@ -372,7 +380,7 @@ async def get_mail(
     received_at = aware.astimezone(timezone.utc).replace(tzinfo=None)
     is_uid_already_present=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
     is_uid_already_present=is_uid_already_present.scalars().first()
-    if is_uid_already_present.status==StatusEnum.completed:
+    if is_uid_already_present or is_uid_already_present.status==StatusEnum.completed:
         print("Triggered:      ",is_uid_already_present)
         return
     for part in raw_message.walk():
@@ -404,9 +412,8 @@ async def get_mail(
 
 
 @app.post("/create-user")
-async def create_user(request: Request):
+async def create_user(session: SessionDep,request: Request):
     body = await request.json()
-    breakpoint()
     result=await session.execute(select(model.User).where(model.User.email==body['email']))
     result=result.scalars().all()
     if result != []:
@@ -424,7 +431,7 @@ async def create_user(request: Request):
     return {"Status":200,"details":"User Added successfully"}
 
 @app.post("/login-user")
-async def login_user(request:Request,response:Response):
+async def login_user(session: SessionDep,request:Request,response:Response):
     body=await request.json()
     result=await session.execute(select(model.User).where(model.User.email==body['email']))
     result=result.scalars().first()
@@ -455,15 +462,16 @@ async def login_user(request:Request,response:Response):
 
 
 @app.post("/change-password")
-async def change_password(request: Request):
+async def change_password(session: SessionDep,request: Request):
     body = await request.json()
     result=await session.execute(select(model.User).where(model.User.id==int(request.state.userId)))
     result=result.scalars().first()
-    if result == []:
+    if result is None:
         print("User doesn't exsist")
         return
     if body["new_password"] != body["confirm_new_password"]:
         print("New password and confirm new password don't match")
+        raise HTTPException(status_code=401,detail="Password missmatch")
     if password_hash.verify(body['current_password'],result.password)==False:
         print("Password Incorrect")
         raise HTTPException(status_code=401,detail="Password Incorrect")
@@ -475,7 +483,7 @@ async def change_password(request: Request):
     return {"Status":200,"details":"Password changed successfully"}
 
 @app.get("/user-details")
-async def user_details(request:Request):
+async def user_details(session: SessionDep,request:Request):
     result=await session.execute(select(model.User).where(model.User.id==request.state.userId))
     result=result.scalars().first()
     dashboard_detail=await session.execute(select(model.dashboard_schedules).where(model.User.id==request.state.userId))
@@ -494,7 +502,7 @@ def logout(response: Response):
     return {"message": "Logged out"}
 
 @app.post("/upload-file")
-async def update_file(request: Request,file:UploadFile=File(...)):
+async def update_file(session: SessionDep,request: Request,file:UploadFile=File(...)):
     try:
         file_bytes = await file.read()
         file_stream = BytesIO(file_bytes)
@@ -534,7 +542,7 @@ async def update_file(request: Request,file:UploadFile=File(...)):
 #     return {"message":f"{username} authenticated"}
 
 @app.post("/update-report-status")
-async def update_report_status(request:Request):
+async def update_report_status(session: SessionDep,request:Request):
     print("Welcome ",request.state.userId)
     body=await request.json()
     report_id=body["report_id"]
@@ -543,9 +551,34 @@ async def update_report_status(request:Request):
     await session.execute(report)
     await session.commit()
 
+@app.get("/get-all-ai-reports")
+async def get_all_ai_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(4)):
+    print("Welcome ",request.state.userId)
+    offset=(page-1)*limit
+    result=await session.execute(select(model.reports).offset(offset).order_by(desc(model.reports.id)).limit(limit))
+    result=result.scalars().all()
+    return result
+
+@app.get("/get-ai-reports-by-id")
+async def get_all_ai_reports(session: SessionDep,request:Request,report_id:str):
+    print("Welcome ",request.state.userId)
+    report_result=await session.execute(select(model.reports).where(model.reports.id==int(report_id)))
+    report_result=report_result.scalars().first()
+    url = s3.generate_presigned_url(
+    ClientMethod='get_object',
+    Params={
+        'Bucket': "amzn-s3-bucket-ai-business-automation-assistant",
+        'Key': report_result.report_name,
+        'ResponseContentDisposition': 'inline',
+        'ResponseContentType': report_result.report_type
+    },
+    ExpiresIn=300
+)
+    result={"report_url":url}
+    return result
 
 @app.post("/analyse-report")
-async def analyse_report(request:Request):
+async def analyse_report(session: SessionDep,request:Request):
     print("Welcome ",request.state.userId)
     try:
         await update_user_dashboard(request.state.userId,queue_changes={
@@ -581,7 +614,7 @@ async def analyse_report(request:Request):
 
 
 @app.post("/query-document")
-async def search_document(request:Request):
+async def search_document(session: SessionDep,request:Request):
     print("Welcome ",request.state.userId)
     body=await request.json()
     if os.path.exists(VECTOR_DB):
@@ -605,6 +638,10 @@ async def search_document(request:Request):
     )
     query=body["query"]
     response=qa_chain.invoke({"query":query})
+    report_data=model.reports(user_id=request.state.userId,report_name="image1.png",report_type="abc",report_summary="xaz",generated_at=datetime.now(),updated_at=datetime.now())
+    session.add(report_data)
+    await session.commit()
+    print("Added to DB")
     print(response)
     return {"response":response}
 
@@ -662,7 +699,7 @@ async def dashboard_ws(websocket:WebSocket):
 
 
 @app.post("/schedule-jobs")
-async def search_document(request:Request):
+async def search_document(session: SessionDep,request:Request):
     print("Welcome ",request.state.userId)
     body=await request.json()
     hour = int(body["hour"])
@@ -705,34 +742,36 @@ async def search_document(request:Request):
     print("Successful time update")
 
 async def run_scheduled_jobs():
-    now = datetime.now()
-    result = await session.execute(
-        select(model.dashboard_schedules)
-        .where(
-            model.dashboard_schedules.next_run_at <= now,
-            model.dashboard_schedules.is_active == True
-        )
-    )
+    async with Session() as session:
+        async with session.begin():
+            now = datetime.now()
+            result = await session.execute(
+                select(model.dashboard_schedules)
+                .where(
+                    model.dashboard_schedules.next_run_at <= now,
+                    model.dashboard_schedules.is_active == True
+                )
+            )
 
-    schedules = result.scalars().all()
+            schedules = result.scalars().all()
 
-    for schedule in schedules:
-        user_id=schedule.user_id
-        result=await session.execute(select(model.User).where(model.User.id==int(user_id))) 
-        result=result.scalars().one()
-        await process_dashboard(result.username)
-        next_run_at=schedule.next_run_at
-        if schedule.schedule_frequency==ScheduleEnum.everyday:
-            next_run_at=next_run_at+timedelta(hours=24)
-        if schedule.schedule_frequency==ScheduleEnum.weekly:
-            next_run_at=next_run_at+timedelta(hours=168)
-        if schedule.schedule_frequency==ScheduleEnum.every_twelve_hours:
-            next_run_at=next_run_at+timedelta(hours=12)
-        if schedule.schedule_frequency==ScheduleEnum.every_six_hours:
-            next_run_at=next_run_at+timedelta(hours=6)  
-        next_run=update(model.dashboard_schedules).where(model.dashboard_schedules.id==schedule.id).values(last_run_at=schedule.next_run_at,next_run_at=next_run_at)
-        await session.execute(next_run)
-        await session.commit()
+            for schedule in schedules:
+                user_id=schedule.user_id
+                result=await session.execute(select(model.User).where(model.User.id==int(user_id))) 
+                result=result.scalars().one()
+                await process_dashboard(result.username,session,"auto")
+                next_run_at=schedule.next_run_at
+                if schedule.schedule_frequency==ScheduleEnum.everyday:
+                    next_run_at=next_run_at+timedelta(hours=24)
+                if schedule.schedule_frequency==ScheduleEnum.weekly:
+                    next_run_at=next_run_at+timedelta(hours=168)
+                if schedule.schedule_frequency==ScheduleEnum.every_twelve_hours:
+                    next_run_at=next_run_at+timedelta(hours=12)
+                if schedule.schedule_frequency==ScheduleEnum.every_six_hours:
+                    next_run_at=next_run_at+timedelta(hours=6)  
+                next_run=update(model.dashboard_schedules).where(model.dashboard_schedules.id==schedule.id).values(last_run_at=schedule.next_run_at,next_run_at=next_run_at)
+                await session.execute(next_run)
+                await session.commit()
 
 
 
