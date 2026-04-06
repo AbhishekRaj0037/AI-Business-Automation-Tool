@@ -1,4 +1,5 @@
 from sqlalchemy import Column,Integer,String,Boolean,ForeignKey,DateTime,BigInteger,Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base,mapped_column,Mapped
 from enum import Enum
 import datetime
@@ -131,6 +132,11 @@ class reports(Base):
     user_id=Column(Integer,ForeignKey("User.id"))
     report_name=Column(String)
     report_type=Column(String, nullable=False)
+    tiptap_json=Column(JSONB,nullable=False)
+    source_map=Column(JSONB,nullable=True)
+    html_cache=Column(Text,nullable=True)
+    s3_key=Column(String,nullable=True)
+    export_format=Column(String,nullable=True)
     report_summary= Column(Text, nullable=True)
     generated_at= Column(DateTime, default=None)
     updated_at=Column(DateTime,default=None)
@@ -142,7 +148,12 @@ class reports(Base):
             f"user_id={self.user_id}, "
             f"report_name={self.report_name}, "
             f"report_type={self.report_type}, "
-            f"summary={self.report_summary}, "
+            f"tiptap_json={self.tiptap_json}, "
+            f"source_map={self.source_map}, "
+            f"html_cache={self.html_cache}, "
+            f"s3_key={self.s3_key}, "
+            f"export_format={self.export_format}, "
+            f"report_summary={self.report_summary}, "
             f"generated_at={self.generated_at}, "
             f"updated_at={self.updated_at}, "
         )

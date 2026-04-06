@@ -32,23 +32,22 @@ import email
 import json
 import asyncio
 import boto3
-import shutil
 import jwt
 import os
 
 from langchain_classic.text_splitter import RecursiveCharacterTextSplitter
 import langchain_community.document_loaders as docloader
-from langchain_openai import AzureOpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_classic.vectorstores import FAISS
 from langchain_classic.chains.retrieval_qa.base import RetrievalQA
-from langchain_openai import OpenAI
-from langchain_openai import AzureChatOpenAI
+from langchain_openai import ChatOpenAI
 
 from email.message import Message
 
 SQLAlchemyJobStoreURL=os.getenv("SQLAlchemyJobStore")
 file_download_path=os.getenv("file_download_path")
-OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
+GPT_MINI=os.getenv("GPT_MINI")
+EMB3_SMALL=os.getenv("EMB3_SMALL")
 
 JWT_SECRET_KEY=os.getenv("JWT_SECRET_KEY")
 imap_server=os.getenv("imap_server")
@@ -139,22 +138,20 @@ mail.select("inbox")
 
 VECTOR_DB=os.getenv("VECTOR_DB")
 
-
-
-llm= AzureChatOpenAI(
-    api_version="2024-12-01-preview",
-    azure_endpoint="https://azure-open-ai-business-automation-tool.openai.azure.com/",
-    api_key=OPENAI_API_KEY,
-    azure_deployment="gpt-4.1-mini"
+llm = ChatOpenAI(
+    model="openai/gpt-4.1-mini",
+    api_key=GPT_MINI,
+    base_url="https://models.github.ai/inference",
 )
-
+ 
 splitter=RecursiveCharacterTextSplitter(chunk_size=500,chunk_overlap=50)
 
-embeddings=AzureOpenAIEmbeddings(
-    api_version="2024-02-01",
-    azure_endpoint="https://azure-open-ai-business-automation-tool.openai.azure.com/",
-    api_key=OPENAI_API_KEY,
-    azure_deployment="text-embedding-3-small"
+embeddings = OpenAIEmbeddings(
+    model="openai/text-embedding-3-small",
+    api_key=EMB3_SMALL,
+    base_url="https://models.github.ai/inference",
+    tiktoken_model_name="text-embedding-3-small",
+    check_embedding_ctx_length=False,
 )
 
 
@@ -380,7 +377,7 @@ async def get_mail(
     received_at = aware.astimezone(timezone.utc).replace(tzinfo=None)
     is_uid_already_present=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
     is_uid_already_present=is_uid_already_present.scalars().first()
-    if is_uid_already_present or is_uid_already_present.status==StatusEnum.completed:
+    if is_uid_already_present:
         print("Triggered:      ",is_uid_already_present)
         return
     for part in raw_message.walk():
@@ -486,7 +483,7 @@ async def change_password(session: SessionDep,request: Request):
 async def user_details(session: SessionDep,request:Request):
     result=await session.execute(select(model.User).where(model.User.id==request.state.userId))
     result=result.scalars().first()
-    dashboard_detail=await session.execute(select(model.dashboard_schedules).where(model.User.id==request.state.userId))
+    dashboard_detail=await session.execute(select(model.dashboard_schedules).where(model.dashboard_schedules.user_id==result.id))
     dashboard_detail=dashboard_detail.scalars().first()
     user={
         "email":result.email,
@@ -494,6 +491,7 @@ async def user_details(session: SessionDep,request:Request):
         "username":result.username,
         "schedule":dashboard_detail
     }
+    
     return user
 
 @app.post("/logout")
@@ -593,7 +591,9 @@ async def analyse_report(session: SessionDep,request:Request):
                 embeddings,
                 allow_dangerous_deserialization=True
             )
+            
             print("Loaded existing vector DB!")
+            breakpoint()
             vectorstore.add_documents(doc_chunks)
             vectorstore.save_local(VECTOR_DB)
             print("Updated vector DB!")
@@ -617,6 +617,7 @@ async def analyse_report(session: SessionDep,request:Request):
 async def search_document(session: SessionDep,request:Request):
     print("Welcome ",request.state.userId)
     body=await request.json()
+    query=body["query"]
     if os.path.exists(VECTOR_DB):
         vectorstore=FAISS.load_local(
             VECTOR_DB,
@@ -627,23 +628,111 @@ async def search_document(session: SessionDep,request:Request):
     else:
         print("No files to query!")
         return 
-    retriever=vectorstore.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k":5}
-    )
-    qa_chain=RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=retriever
-    )
-    query=body["query"]
-    response=qa_chain.invoke({"query":query})
-    report_data=model.reports(user_id=request.state.userId,report_name="image1.png",report_type="abc",report_summary="xaz",generated_at=datetime.now(),updated_at=datetime.now())
-    session.add(report_data)
-    await session.commit()
-    print("Added to DB")
-    print(response)
-    return {"response":response}
+    try:
+        retriever=vectorstore.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k":10}
+        )
+        # qa_chain=RetrievalQA.from_chain_type(
+        # llm=llm,
+        # chain_type="stuff",
+        # retriever=retriever
+        # )
+        retrieved_docs=retriever.invoke(query)
+        # response=qa_chain.invoke({"query":query})
+        context_parts = []
+        source_map = {}
+        for i, doc in enumerate(retrieved_docs):
+            chunk_id = f"chunk_{i}"
+            context_parts.append(f"[SOURCE:{chunk_id}]\n{doc.page_content}")
+            # doc.metadata comes from how you ingested the documents
+            source_map[chunk_id] = {
+                "s3_key": doc.metadata.get("s3_key", ""),
+                "file_name": doc.metadata.get("source", "unknown"),
+                "page": doc.metadata.get("page", None),
+            }
+        context = "\n\n".join(context_parts)
+        system_prompt = """You are a report generator. Given context from source documents,
+    generate a structured report. Respond ONLY with valid JSON, no markdown, no backticks.
+
+    The JSON must have this exact structure:
+    {
+    "report_name": "short descriptive filename like food_order_analysis.pdf",
+    "report_type": "one of: order_report, policy_report, financial_report, general_report",
+    "report_summary": "2-3 sentence summary of what this report contains",
+    "tiptap_json": {
+        "type": "doc",
+        "content": [
+        {
+            "type": "heading",
+            "attrs": {"level": 2, "sources": ["chunk_0"]},
+            "content": [{"type": "text", "text": "Your heading here"}]
+        },
+        {
+            "type": "paragraph",
+            "attrs": {"sources": ["chunk_0", "chunk_1"]},
+            "content": [{"type": "text", "text": "Your paragraph here"}]
+        },
+        {
+            "type": "table",
+            "attrs": {"sources": ["chunk_2"]},
+            "content": [
+            {
+                "type": "tableRow",
+                "content": [
+                {"type": "tableHeader", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Column Name"}]}]}
+                ]
+            },
+            {
+                "type": "tableRow",
+                "content": [
+                {"type": "tableCell", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Cell value"}]}]}
+                ]
+            }
+            ]
+        }
+        ]
+    }
+    }
+
+    RULES:
+    - Every node (heading, paragraph, table) MUST have attrs.sources with the chunk IDs used
+    - Tables MUST wrap text inside paragraph nodes within cells
+    - Use the SOURCE IDs provided in the context (like chunk_0, chunk_1)
+    - report_name should be a clean filename with no spaces (use underscores)
+    """
+
+        response = await llm.ainvoke([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Context:\n{context}\n\nGenerate a report for: {query}"}
+        ])
+        result = json.loads(response.content)
+        breakpoint()
+        report_data=model.reports(
+            user_id=request.state.userId,
+            report_name=result["report_name"],
+            report_type=result["report_type"],
+            report_summary=result["report_summary"],
+            tiptap_json=result["tiptap_json"],
+            source_map=source_map,
+            generated_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        session.add(report_data)
+        await session.commit()
+        print("Added to DB")
+        print(response)
+    except Exception as e:
+        print("Error occured: ",e)
+        return 
+    return {
+        "report_id": report_data.id,
+        "report_name": report_data.report_name,
+        "report_type": report_data.report_type,
+        "report_summary": report_data.report_summary,
+        "tiptap_json": report_data.tiptap_json,
+        "source_map": report_data.source_map,
+    }
 
 
 
@@ -759,7 +848,7 @@ async def run_scheduled_jobs():
                 user_id=schedule.user_id
                 result=await session.execute(select(model.User).where(model.User.id==int(user_id))) 
                 result=result.scalars().one()
-                await process_dashboard(result.username,session,"auto")
+                # await process_dashboard(result.username,session,"auto")
                 next_run_at=schedule.next_run_at
                 if schedule.schedule_frequency==ScheduleEnum.everyday:
                     next_run_at=next_run_at+timedelta(hours=24)
@@ -771,7 +860,6 @@ async def run_scheduled_jobs():
                     next_run_at=next_run_at+timedelta(hours=6)  
                 next_run=update(model.dashboard_schedules).where(model.dashboard_schedules.id==schedule.id).values(last_run_at=schedule.next_run_at,next_run_at=next_run_at)
                 await session.execute(next_run)
-                await session.commit()
 
 
 
