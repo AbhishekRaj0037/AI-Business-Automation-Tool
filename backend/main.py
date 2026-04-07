@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select,update,desc
 from email.utils import parsedate_to_datetime
 from DataBase import get_session,Session
+import parse_files
 from typing import Annotated
 import websocket_dashboard
 from model import StatusEnum,ScheduleEnum
@@ -23,14 +24,17 @@ from pwdlib import PasswordHash
 from datetime import date,time
 import cloudinary
 import cloudinary.uploader
+from pathlib import Path
 from typing import List
 from io import BytesIO
+import uuid
 import hashlib
 import imaplib
 import model
 import email
 import json
 import asyncio
+import pypdf
 import boto3
 import jwt
 import os
@@ -39,6 +43,7 @@ from langchain_classic.text_splitter import RecursiveCharacterTextSplitter
 import langchain_community.document_loaders as docloader
 from langchain_openai import OpenAIEmbeddings
 from langchain_classic.vectorstores import FAISS
+
 from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 from langchain_openai import ChatOpenAI
 
@@ -291,6 +296,7 @@ async def process_dashboard(userId,session,fetch_type):
             report_data=None
             report_data=model.email_metadata(imap_uid=int(uid),mail_from=mail_from,subject=subject,received_at=received_at,body=formatted_body)
             session.add(report_data)
+            await session.commit()
             for part in raw_message.walk():
                 if part.get_content_maintype() == "multipart":
                     continue
@@ -298,11 +304,14 @@ async def process_dashboard(userId,session,fetch_type):
                 if filename:
                     try:
                         file_bytes = part.get_payload(decode=True)
-                        s3.put_object(Bucket="amzn-s3-bucket-ai-business-automation-assistant",Key=f"{filename}",Body=file_bytes)
+                        ext=Path(filename).suffix
+                        unique_id=uuid.uuid4().hex
+                        s3_key=f"uploads/{userId}/{unique_id}{ext}"
+                        s3.put_object(Bucket="amzn-s3-bucket-ai-business-automation-assistant",Key=f"{s3_key}",Body=file_bytes)
                         print("File uploaded succesfully on aws bucket")
                         file_data=None
                         content_type = part.get_content_type()
-                        file_data=model.email_attachments_metadata(imap_uid=int(uid),file_name=filename,file_type=content_type,file_size=len(file_bytes),status=StatusEnum.incomplete,checksum_sha256="!231231231231!")
+                        file_data=model.email_attachments_metadata(imap_uid=int(uid),file_name=filename,file_type=content_type,file_size=len(file_bytes),status=StatusEnum.incomplete,checksum_sha256="!231231231231!",s3_key=s3_key)
                         session.add(file_data)
                     except Exception as e:
                         print("Error:  ",e)
@@ -334,7 +343,7 @@ async def get_all_reports(session: SessionDep,request:Request,imap_uid:int=Query
         ClientMethod='get_object',
         Params={
             'Bucket': "amzn-s3-bucket-ai-business-automation-assistant",
-            'Key': result.file_name,
+            'Key': result.s3_key,
             'ResponseContentDisposition': 'inline',
             'ResponseContentType': result.file_type
         },
@@ -577,30 +586,42 @@ async def get_all_ai_reports(session: SessionDep,request:Request,report_id:str):
 
 @app.post("/analyse-report")
 async def analyse_report(session: SessionDep,request:Request):
-    print("Welcome ",request.state.userId)
+    print("Welcome ",request.state.username)
+    body=await request.json()
+    file_name=body["file_name"]
+    s3_key=body["s3_key"]
+    report_id=body["report_id"]
+    report_result=await session.execute(select(model.email_attachments_metadata).where(model.email_attachments_metadata.id==int(report_id)))
+    report_result=report_result.scalars().first()
+    if report_result.status==StatusEnum.completed:
+        return {"status":"Report already analysed"}
     try:
         await update_user_dashboard(request.state.userId,queue_changes={
                     "pending":1,
                 })
-        loader=docloader.PyPDFLoader("Policy-P000188666627.pdf")
-        loaded_doc=loader.load()
-        doc_chunks=splitter.split_documents(loaded_doc)
+        response=s3.get_object(
+            Bucket="amzn-s3-bucket-ai-business-automation-assistant",
+            Key=s3_key
+        )
+        file_bytes=response["Body"].read()
+        loaded_docs=parse_files.parse_file(file_bytes,file_name,s3_key)
+        doc_chunks=splitter.split_documents(loaded_docs)
         if os.path.exists(VECTOR_DB):
             vectorstore=FAISS.load_local(
                 VECTOR_DB,
                 embeddings,
                 allow_dangerous_deserialization=True
             )
-            
             print("Loaded existing vector DB!")
-            breakpoint()
             vectorstore.add_documents(doc_chunks)
-            vectorstore.save_local(VECTOR_DB)
             print("Updated vector DB!")
         else:
             vectorstore = FAISS.from_documents(doc_chunks, embeddings)
-            vectorstore.save_local(VECTOR_DB)
             print("Created new vector DB!")
+        vectorstore.save_local(VECTOR_DB)
+        result=update(model.email_attachments_metadata).where(model.email_attachments_metadata.id == report_id).values(status=StatusEnum.completed)
+        await session.execute(result)
+        await session.commit()
         await update_user_dashboard(request.state.userId,stats_changes={
                     "completed":1,
                     "pending":-1
@@ -609,8 +630,8 @@ async def analyse_report(session: SessionDep,request:Request):
         await update_user_dashboard(request.state.userId,queue_changes={
                     "pending":-1,
                 })
-        return {"Error ",err}
-    return {"Done analysing file!"}
+        raise HTTPException(status_code=500, detail=str(err))
+    return {"status": "done", "chunks": len(doc_chunks)}
 
 
 @app.post("/query-document")
@@ -633,24 +654,33 @@ async def search_document(session: SessionDep,request:Request):
             search_type="similarity",
             search_kwargs={"k":10}
         )
-        # qa_chain=RetrievalQA.from_chain_type(
-        # llm=llm,
-        # chain_type="stuff",
-        # retriever=retriever
-        # )
         retrieved_docs=retriever.invoke(query)
-        # response=qa_chain.invoke({"query":query})
         context_parts = []
         source_map = {}
         for i, doc in enumerate(retrieved_docs):
             chunk_id = f"chunk_{i}"
             context_parts.append(f"[SOURCE:{chunk_id}]\n{doc.page_content}")
             # doc.metadata comes from how you ingested the documents
-            source_map[chunk_id] = {
-                "s3_key": doc.metadata.get("s3_key", ""),
-                "file_name": doc.metadata.get("source", "unknown"),
-                "page": doc.metadata.get("page", None),
-            }
+            for i, doc in enumerate(retrieved_docs):
+                chunk_id = f"chunk_{i}"
+                context_parts.append(f"[SOURCE:{chunk_id}]\n{doc.page_content}")
+                file_type = doc.metadata.get("file_type", "")
+                source = {
+                    "s3_key": doc.metadata.get("s3_key", ""),
+                    "file_name": doc.metadata.get("file_name", "unknown"),
+                    "file_type": file_type,
+                }
+                if file_type == "pdf":
+                    source["page"] = doc.metadata.get("page", None)
+
+                elif file_type == "excel":
+                    source["sheet"] = doc.metadata.get("sheet", None)
+                    source["row_count"] = doc.metadata.get("row_count", None)
+
+                elif file_type == "docx":
+                    source["section"] = doc.metadata.get("section", None)
+
+                source_map[chunk_id] = source
         context = "\n\n".join(context_parts)
         system_prompt = """You are a report generator. Given context from source documents,
     generate a structured report. Respond ONLY with valid JSON, no markdown, no backticks.

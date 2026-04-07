@@ -86,6 +86,7 @@ class email_attachments_metadata(Base):
     __tablename__="AttachmentData"
     id=Column(Integer,primary_key=True)
     imap_uid=Column(Integer,ForeignKey("EmailData.imap_uid"))
+    s3_key=Column(String)
     file_name=Column(String)
     file_type=Column(String)
     file_size=Column(BigInteger)
@@ -97,6 +98,7 @@ class email_attachments_metadata(Base):
             f"<AttachmentData("
             f"id={self.id}, "
             f"imap_uid={self.imap_uid}, "
+            f"s3_key={self.s3_key}, "
             f"file_name={self.file_name})>"
             f"file_size={self.file_size},"
             f"status={self.status},"

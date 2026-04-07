@@ -80,7 +80,11 @@ const DashboardPage = () => {
             <tbody>
               {email.attachment_result?.map((file: any, index: any) => {
                 const fileUrl = email.list_of_file_presigned_url?.[index];
-
+                const s3_key = email.attachment_result[index].s3_key;
+                const file_name = email.attachment_result[index].file_name;
+                const report_id = email.attachment_result[index].id;
+                const analysis = email.attachment_result[index].status;
+                console.log("email obj==>", email.attachment_result[index]);
                 return (
                   <tr className="border-t" key={index}>
                     <td className="border px-4 py-2 text-green-600 text-center">
@@ -96,21 +100,49 @@ const DashboardPage = () => {
                     </td>
 
                     <td className="border px-4 py-2 text-center">
-                      <a
-                        href={`/report/${index}`}
-                        className="text-blue-600 hover:underline"
-                      >
-                        Give it to AI
-                      </a>
+                      {analysis === "completed" ? (
+                        <button
+                          disabled
+                          className="text-green-600 cursor-not-allowed opacity-70"
+                        >
+                          AI analysis done
+                        </button>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const response = await fetch(
+                                "http://localhost:8000/analyse-report",
+                                {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                  },
+                                  credentials: "include",
+                                  body: JSON.stringify({
+                                    file_name: file_name,
+                                    s3_key: s3_key,
+                                    report_id: report_id,
+                                  }),
+                                },
+                              );
+                              const data = await response.json();
+                              console.log("Analysis result:", data);
+                            } catch (err) {
+                              console.error("Error:", err);
+                            }
+                          }}
+                          className="text-blue-600 hover:underline"
+                        >
+                          Give it to AI
+                        </button>
+                      )}
                     </td>
 
                     <td className="border px-4 py-2">
                       <div className="flex justify-center items-center h-full">
                         <button
                           onClick={() => {
-                            {
-                              console.log("File url current===> ", fileUrl);
-                            }
                             setSelectedFile(fileUrl);
                           }}
                           className="text-blue-600 hover:underline"
