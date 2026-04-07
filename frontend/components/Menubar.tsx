@@ -36,6 +36,11 @@ const menuItems = [
         href: "/reports",
       },
       {
+        icon: "/ai-application.png",
+        label: "Generate Reports",
+        href: "/generate-report",
+      },
+      {
         icon: "/generate-icon.png",
         label: "Email AI Analysis",
         href: "/email-ai-analysis",
@@ -203,7 +208,7 @@ const Menubar = () => {
             </label>
           </div>
         </div>
-        <div className="mt-auto flex items-center gap-2 px-2 text-gray-500 pt-19">
+        <div className="mt-auto flex items-center gap-2 px-2 text-gray-500 ">
           <img
             src={userDetail?.profile_photo_url}
             className="w-10 h-10 rounded-full"

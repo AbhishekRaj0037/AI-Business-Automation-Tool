@@ -90,7 +90,7 @@ const DashboardPage = () => {
             <th className="border px-4 py-2 text-center">Report Name</th>
             <th className="border px-4 py-2 text-center">Report Type</th>
             <th className="border px-4 py-2 text-center">Updated At</th>
-            <th className="border px-4 py-2 text-center">View</th>
+            <th className="border px-4 py-2 text-center">Edit Report</th>
           </tr>
         </thead>
         <tbody>
@@ -104,12 +104,16 @@ const DashboardPage = () => {
               <td className="border px-4 py-2">{report.updated_at}</td>
               <td className="border px-4 py-2">
                 <div className="flex justify-center items-center h-full">
-                  <button
-                    onClick={() => handleViewFile(report.id)}
-                    className="text-blue-600 hover:underline"
-                  >
-                    👁
-                  </button>
+                  <td className="border px-4 py-2">
+                    <div className="flex justify-center items-center h-full">
+                      <Link
+                        href={`/reports/${report.id}`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        Edit
+                      </Link>
+                    </div>
+                  </td>
                 </div>
               </td>
             </tr>

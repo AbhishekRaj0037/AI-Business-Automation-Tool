@@ -737,7 +737,6 @@ async def search_document(session: SessionDep,request:Request):
             {"role": "user", "content": f"Context:\n{context}\n\nGenerate a report for: {query}"}
         ])
         result = json.loads(response.content)
-        breakpoint()
         report_data=model.reports(
             user_id=request.state.userId,
             report_name=result["report_name"],
@@ -764,6 +763,52 @@ async def search_document(session: SessionDep,request:Request):
         "source_map": report_data.source_map,
     }
 
+
+@app.get("/get-report/{report_id}")
+async def get_report(report_id: int, session: SessionDep, request: Request):
+    result = await session.execute(
+        select(model.reports).where(
+            model.reports.id == report_id,
+            model.reports.user_id == request.state.userId
+        )
+    )
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    return {
+        "id": report.id,
+        "title": report.report_name,
+        "report_summary": report.report_summary,
+        "tiptap_json": report.tiptap_json,
+        "source_map": report.source_map,
+        "report_type": report.report_type,
+        "generated_at": report.generated_at,
+        "updated_at": report.updated_at,
+    }
+
+
+@app.put("/update-report/{report_id}")
+async def update_report(report_id: int, session: SessionDep, request: Request):
+    body = await request.json()
+
+    result = await session.execute(
+        select(model.reports).where(
+            model.reports.id == report_id,
+            model.reports.user_id == request.state.userId
+        )
+    )
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    report.tiptap_json = body["tiptap_json"]
+    report.updated_at = datetime.now()
+
+    await session.flush()
+    await session.commit()
+
+    return {"status": "saved", "report_id": report.id}
 
 
 @app.websocket("/ws/dashboard")
