@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 
 async function getReports(page: any) {
   const res = await fetch(
-    `http://localhost:8000/get-all-ai-reports?page=${page}&limit=4`,
+    `http://localhost:8000/get-all-ai-reports?page=${page}&limit=5`,
     {
       cache: "no-store",
       credentials: "include",
@@ -104,16 +104,12 @@ const DashboardPage = () => {
               <td className="border px-4 py-2">{report.updated_at}</td>
               <td className="border px-4 py-2">
                 <div className="flex justify-center items-center h-full">
-                  <td className="border px-4 py-2">
-                    <div className="flex justify-center items-center h-full">
-                      <Link
-                        href={`/reports/${report.id}`}
-                        className="text-blue-600 hover:underline"
-                      >
-                        Edit
-                      </Link>
-                    </div>
-                  </td>
+                  <Link
+                    href={`/reports/${report.id}`}
+                    className="text-blue-600 hover:underline"
+                  >
+                    Edit
+                  </Link>
                 </div>
               </td>
             </tr>
@@ -142,23 +138,18 @@ const DashboardPage = () => {
 
         {/* Right side Pagination */}
         <div className="flex items-center gap-2">
-          <button className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100">
+          <button
+            className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100 "
+            onClick={() => setPage(page - 1)}
+            disabled={page === 1}
+          >
             Previous
           </button>
 
-          <button className="px-3 py-1 bg-blue-600 text-white rounded-md">
-            1
-          </button>
-
-          <button className="px-3 py-1 border rounded-md hover:bg-gray-100">
-            2
-          </button>
-
-          <button className="px-3 py-1 border rounded-md hover:bg-gray-100">
-            3
-          </button>
-
-          <button className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100">
+          <button
+            className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100"
+            onClick={() => setPage(page + 1)}
+          >
             Next
           </button>
         </div>

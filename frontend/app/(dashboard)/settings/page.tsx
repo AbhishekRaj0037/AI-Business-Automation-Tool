@@ -100,6 +100,7 @@ const DashboardPage = () => {
     }));
 
     set_Photo(null);
+    window.location.reload();
   };
 
   useEffect(() => {

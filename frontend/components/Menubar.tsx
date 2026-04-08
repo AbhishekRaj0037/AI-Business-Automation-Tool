@@ -101,7 +101,6 @@ const Menubar = () => {
         cache: "no-store",
         credentials: "include",
       });
-      console.log("Hello Menubar===>", res);
       if (res.status === 401) {
         window.location.href = "/login";
       }

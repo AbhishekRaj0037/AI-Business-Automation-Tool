@@ -5,6 +5,7 @@ from datetime import date
 
 r=redis.Redis(host='localhost',port=6379,decode_responses=True)
 
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections = {}
@@ -19,12 +20,12 @@ class ConnectionManager:
         if userId in self.active_connections:
             self.active_connections[userId].remove(websocket)
 
-    async def send(self, userId: str, data: dict):
+    async def send(self, userId: str, data: dict,button:str):
         
         if userId in self.active_connections:
-    
+            
             for ws in self.active_connections[userId]:
-                await ws.send_json({'userId':userId,'data':data})
+                await ws.send_json({'userId':userId,'data':data,'button':button})
 
 
 
@@ -34,6 +35,7 @@ async def update_user_dashboard(
     queue_changes: dict = None,
     stats_changes: dict = None
 ):
+
     today = date.today().isoformat()
 
     queue_key = f"userId:{userId}:queue"
@@ -58,6 +60,10 @@ async def update_user_dashboard(
         json.dumps({"userId": userId})
     )
 
+async def clear_all_fetch_status():
+    keys = await r.keys("fetching:*")
+    for key in keys:
+        await r.set(key, "false")
 
 
 async def set_task_status(user_id: str, status: str):

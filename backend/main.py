@@ -10,7 +10,7 @@ from fastapi_sa_orm_filter.main import FilterCore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.executors.asyncio import AsyncIOExecutor
-from datetime import timezone,datetime,timedelta,time
+from datetime import timezone,datetime,timedelta,time,date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select,update,desc
 from email.utils import parsedate_to_datetime
@@ -21,7 +21,7 @@ import websocket_dashboard
 from model import StatusEnum,ScheduleEnum
 from schemas import EmailMetaDataOut
 from pwdlib import PasswordHash
-from datetime import date,time
+import time as time_module
 import cloudinary
 import cloudinary.uploader
 from pathlib import Path
@@ -48,6 +48,7 @@ from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 from langchain_openai import ChatOpenAI
 
 from email.message import Message
+from bs4 import BeautifulSoup
 
 SQLAlchemyJobStoreURL=os.getenv("SQLAlchemyJobStore")
 file_download_path=os.getenv("file_download_path")
@@ -182,8 +183,9 @@ job_defaults={
 scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=job_defaults)
 
 
+
 async def get_dashboard_stats(userId: str):
-    today = date.today().isoformat()
+    today =date.today()
     queue_key = f"userId:{userId}:queue"
     stats_key = f"userId:{userId}:stats:{today}"
 
@@ -202,20 +204,23 @@ async def redis_listener():
         if message["type"] == "pmessage":
             data = json.loads(message["data"])
             userId = data["userId"]
+            button= await websocket_dashboard.get_task_status(userId)
             
             # fetch latest stats from Redis
             stats = await get_dashboard_stats(userId)
-            
             # push to correct websocket user
-            await manager.send(userId, stats)
+            await manager.send(userId, stats,button)
             
 
+
+
 @app.on_event("startup")
-def on_start():
+async def on_start():
     try:
         scheduler.start()
         print("Started scheduler successfully")
         asyncio.create_task(redis_listener())
+        await websocket_dashboard.clear_all_fetch_status()
     except Exception as err:
         print("Scheduler giving error: ", err)
 
@@ -230,6 +235,19 @@ def checksum_from_part(part, algo="sha256", chunk_size=8192):
         hasher.update(payload[i:i + chunk_size])
 
     return hasher.hexdigest()
+
+def get_clean_body(body):
+    soup = BeautifulSoup(body, "html.parser")
+    
+    # Remove script and style tags completely
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+    
+    text = soup.get_text(separator="\n")
+    
+    # Clean up whitespace
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    return "\n".join(lines)
 
 def get_email_body(msg: Message) -> str:
     """
@@ -252,7 +270,7 @@ def get_email_body(msg: Message) -> str:
 @app.get("/")
 async def read_root(request:Request,session: SessionDep):
     await websocket_dashboard.set_task_status(request.state.userId,"true")
-    await process_dashboard(request.state.userId,session,"manual")
+    await process_dashboard(request.state.userId,session)
 
 @app.get("/stop-fetching")
 async def stop_fetching(request:Request,session: SessionDep):
@@ -264,7 +282,7 @@ async def fetch_status(request:Request,session: SessionDep):
     status=await websocket_dashboard.get_task_status(request.state.userId)
     return {"is_fetching":status=="true"}
 
-async def process_dashboard(userId,session,fetch_type):
+async def process_dashboard(userId,session):
     print("Welcome ",userId)
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)).limit(1))
     result=result.scalars().first()
@@ -275,7 +293,7 @@ async def process_dashboard(userId,session,fetch_type):
     uid_list=uids[1][0].split()
     for uid in uid_list:
         status=await websocket_dashboard.get_task_status(userId)
-        if fetch_type== "manual" and status != "true":
+        if status != "true":
             print(f"Stopped fetching for {userId}")
             break
         print(f"Fetching emails for {userId}...")
@@ -286,8 +304,7 @@ async def process_dashboard(userId,session,fetch_type):
         subject=raw_message["Subject"]
         received_at=raw_message["Date"]
         body=get_email_body(raw_message)
-        lines = [line.strip() for line in body.split('\n') if line.strip()]
-        formatted_body = "\n".join(lines)
+        formatted_body = get_clean_body(body)
         aware = parsedate_to_datetime(received_at)
         received_at = aware.astimezone(timezone.utc).replace(tzinfo=None)
         is_uid_already_synced=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(uid)))
@@ -315,14 +332,14 @@ async def process_dashboard(userId,session,fetch_type):
                         session.add(file_data)
                     except Exception as e:
                         print("Error:  ",e)
-            await update_user_dashboard(username,stats_changes={
+            await update_user_dashboard(userId,stats_changes={
                 "fetch_today":1
             })
             print("Added to DB")
 
 
 @app.get("/get-all-reports")
-async def get_all_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(4)):
+async def get_all_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(5)):
     print("Welcome ",request.state.userId)
     offset=(page-1)*limit
     result=await session.execute(select(model.email_metadata).offset(offset).order_by(desc(model.email_metadata.imap_uid)).limit(limit))
@@ -559,7 +576,7 @@ async def update_report_status(session: SessionDep,request:Request):
     await session.commit()
 
 @app.get("/get-all-ai-reports")
-async def get_all_ai_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(4)):
+async def get_all_ai_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(5)):
     print("Welcome ",request.state.userId)
     offset=(page-1)*limit
     result=await session.execute(select(model.reports).offset(offset).order_by(desc(model.reports.id)).limit(limit))
@@ -622,9 +639,11 @@ async def analyse_report(session: SessionDep,request:Request):
         result=update(model.email_attachments_metadata).where(model.email_attachments_metadata.id == report_id).values(status=StatusEnum.completed)
         await session.execute(result)
         await session.commit()
+        await update_user_dashboard(request.state.userId,queue_changes={
+                    "pending":-1,
+                })
         await update_user_dashboard(request.state.userId,stats_changes={
                     "completed":1,
-                    "pending":-1
                 })
     except Exception as err:
         await update_user_dashboard(request.state.userId,queue_changes={
@@ -827,12 +846,13 @@ async def dashboard_ws(websocket:WebSocket):
         return
     await manager.connect(userId,websocket)
     data=await get_dashboard_stats(userId)
+    buttonStatus=await websocket_dashboard.get_task_status(userId)
     await websocket.send_json({
-        'userId':userId,'data':data
+        'userId':userId,'data':data,'button':buttonStatus
     })
     async def token_monitor():
         try:
-            remaining = exp - int(time.time())
+            remaining = exp - int(time_module.time())
             if remaining > 0:
                 await asyncio.sleep(remaining)
             await websocket.send_json({"error": "token expired"})
@@ -849,7 +869,6 @@ async def dashboard_ws(websocket:WebSocket):
 
     monitor_task = asyncio.create_task(token_monitor())
     receive_task = asyncio.create_task(receive_loop())
-
     done, pending = await asyncio.wait(
         [monitor_task, receive_task],
         return_when=asyncio.FIRST_COMPLETED
@@ -884,7 +903,6 @@ async def search_document(session: SessionDep,request:Request):
         microsecond=0
 )
     schedule_time = datetime.combine(datetime.now().date(), schedule_time)
-    # schedule_update=update(model.dashboard_schedules).where(model.dashboard_schedules.user_id==model.User.id).where(model.User.username==request.state.username).values(schedule_frequency=ScheduleEnum(body['frequency']),schedule_time=schedule_time,next_run_at=next_run_at,is_active=True)
     schedule_update = (
     update(model.dashboard_schedules)
     .where(
@@ -907,34 +925,36 @@ async def search_document(session: SessionDep,request:Request):
 
 async def run_scheduled_jobs():
     async with Session() as session:
-        async with session.begin():
-            now = datetime.now()
-            result = await session.execute(
-                select(model.dashboard_schedules)
-                .where(
-                    model.dashboard_schedules.next_run_at <= now,
-                    model.dashboard_schedules.is_active == True
-                )
+        now = datetime.now()
+        result = await session.execute(
+            select(model.dashboard_schedules)
+            .where(
+                model.dashboard_schedules.next_run_at <= now,
+                model.dashboard_schedules.is_active == True
             )
+        )
 
-            schedules = result.scalars().all()
+        schedules = result.scalars().all()
 
-            for schedule in schedules:
-                user_id=schedule.user_id
-                result=await session.execute(select(model.User).where(model.User.id==int(user_id))) 
-                result=result.scalars().one()
-                # await process_dashboard(result.username,session,"auto")
-                next_run_at=schedule.next_run_at
-                if schedule.schedule_frequency==ScheduleEnum.everyday:
-                    next_run_at=next_run_at+timedelta(hours=24)
-                if schedule.schedule_frequency==ScheduleEnum.weekly:
-                    next_run_at=next_run_at+timedelta(hours=168)
-                if schedule.schedule_frequency==ScheduleEnum.every_twelve_hours:
-                    next_run_at=next_run_at+timedelta(hours=12)
-                if schedule.schedule_frequency==ScheduleEnum.every_six_hours:
-                    next_run_at=next_run_at+timedelta(hours=6)  
-                next_run=update(model.dashboard_schedules).where(model.dashboard_schedules.id==schedule.id).values(last_run_at=schedule.next_run_at,next_run_at=next_run_at)
-                await session.execute(next_run)
+        for schedule in schedules:
+            user_id=schedule.user_id
+            result=await session.execute(select(model.User).where(model.User.id==int(user_id))) 
+            result=result.scalars().one()
+            await websocket_dashboard.set_task_status(result.id,"true")
+            await process_dashboard(result.id,session)
+            await websocket_dashboard.set_task_status(result.id,"false")
+            next_run_at=schedule.next_run_at
+            if schedule.schedule_frequency==ScheduleEnum.everyday:
+                next_run_at=next_run_at+timedelta(hours=24)
+            if schedule.schedule_frequency==ScheduleEnum.weekly:
+                next_run_at=next_run_at+timedelta(hours=168)
+            if schedule.schedule_frequency==ScheduleEnum.every_twelve_hours:
+                next_run_at=next_run_at+timedelta(hours=12)
+            if schedule.schedule_frequency==ScheduleEnum.every_six_hours:
+                next_run_at=next_run_at+timedelta(hours=6)  
+            next_run=update(model.dashboard_schedules).where(model.dashboard_schedules.id==schedule.id).values(last_run_at=schedule.next_run_at,next_run_at=next_run_at)
+            await session.execute(next_run)
+            await session.commit()
 
 
 

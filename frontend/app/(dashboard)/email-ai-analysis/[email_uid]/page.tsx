@@ -30,11 +30,15 @@ const DashboardPage = () => {
   const params = useParams();
   useEffect(() => {
     async function fetchData() {
-      const mail_Data = await getMail(params.email_uid, page);
-      setEmailData(mail_Data);
+      try {
+        const mail_Data = await getMail(params.email_uid, page);
+        setEmailData(mail_Data);
+      } catch (err) {
+        console.error("Fetch error:", err);
+      }
     }
     fetchData();
-  }, [page]);
+  }, [page, params.email_uid]);
 
   const [selectedFile, setSelectedFile] = useState(null);
   return (
@@ -128,6 +132,7 @@ const DashboardPage = () => {
                               );
                               const data = await response.json();
                               console.log("Analysis result:", data);
+                              window.location.reload();
                             } catch (err) {
                               console.error("Error:", err);
                             }
@@ -191,6 +196,7 @@ const DashboardPage = () => {
               <button
                 className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100"
                 onClick={() => setPage(page + 1)}
+                disabled={email.attachment_result?.length === 0}
               >
                 Next
               </button>

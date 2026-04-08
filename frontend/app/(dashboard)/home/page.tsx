@@ -5,19 +5,18 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type DashboardStats = {
-  username: string;
+  userId: number;
   data: {
     queue: {
       pending: number;
-      processing: number;
-      completed: number;
-      failed: number;
     };
     stats: {
       fetch_today: number;
-      ai_processed_today: number;
+      completed: number;
+      pending: number;
     };
   };
+  button: string;
 };
 
 const DashboardPage = () => {
@@ -25,8 +24,33 @@ const DashboardPage = () => {
   const [websocket_incoming_data, setStats] = useState<DashboardStats | null>(
     null,
   );
-  const [data, setData] = useState(null);
   const [isFetching, setIsFetching] = useState(false);
+  useEffect(() => {
+    const ws = new WebSocket(`ws://localhost:8000/ws/dashboard`);
+    ws.onopen = () => {
+      console.log("WebSocket connected successfully");
+    };
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log("Received websocket data:", data);
+      console.log("button value:", data.button, "type:", typeof data.button);
+      setStats(data);
+      if (data.button === "true") setIsFetching(true);
+      else setIsFetching(false);
+      console.log("button==>", data.button);
+    };
+    ws.onerror = (err) => {
+      console.log("WebSocket error -> ", err);
+    };
+    ws.onclose = (event) => {
+      console.log("WebSocket closed");
+      console.log("Code:", event);
+      if (event.code === 1008) {
+        window.location.href = "/login";
+      }
+    };
+    return () => ws.close();
+  }, []);
   const handleToggle = async () => {
     if (!isFetching) {
       setIsFetching(true);
@@ -42,29 +66,6 @@ const DashboardPage = () => {
       });
     }
   };
-  useEffect(() => {
-    const ws = new WebSocket(`ws://localhost:8000/ws/dashboard`);
-    ws.onopen = () => {
-      console.log("WebSocket connected successfully");
-    };
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log("Received websocket data:", data);
-
-      setStats(data);
-    };
-    ws.onerror = (err) => {
-      console.log("WebSocket error", err);
-    };
-    ws.onclose = (event) => {
-      console.log("WebSocket closed");
-      console.log("Code:", event);
-      if (event.code === 1008) {
-        window.location.href = "/login";
-      }
-    };
-    return () => ws.close();
-  }, []);
   return (
     <div>
       <div className="text-black text-3xl pl-12 pt-12">
@@ -90,7 +91,7 @@ const DashboardPage = () => {
           />
           <div>AI Analysis Done Today</div>
           <div className="text-3xl">
-            {websocket_incoming_data?.data?.queue?.completed}
+            {websocket_incoming_data?.data?.stats?.completed}
           </div>
         </div>
         <div className="rounded-md bg-blue-100  p-4 text-black w-64 h-35">

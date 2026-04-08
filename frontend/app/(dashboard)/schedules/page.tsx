@@ -43,6 +43,7 @@ const DashboardPage = () => {
       const result = await res.json();
       console.log("Saved:", result);
       setButtonStatus(false);
+      window.location.reload();
     } catch (err) {
       console.error("Error:", err);
     }

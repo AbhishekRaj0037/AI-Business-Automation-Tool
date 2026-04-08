@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 
 async function getMails(page: any) {
   const res = await fetch(
-    `http://localhost:8000/get-all-reports?page=${page}&limit=4`,
+    `http://localhost:8000/get-all-reports?page=${page}&limit=5`,
     {
       cache: "no-store",
       credentials: "include",
@@ -46,26 +46,6 @@ const DashboardPage = () => {
         Real-time visibility into fetched emails and AI analysis status
       </div>
 
-      <div className="mb-2">
-        <div className="border text-black border-gray-300 h-20 rounded-md">
-          <span className="text-2xl pl-4">Emails</span>
-          <span className="pl-150">
-            <button
-              onClick={async () => {
-                const res = await fetch("http://localhost:8000/", {
-                  method: "GET",
-                  credentials: "include",
-                });
-                const data = await res.json();
-                console.log(data);
-              }}
-              className="bg-blue-600 text-white px-3 py-3 rounded-lg inline-flex items-center gap-2 hover:bg-blue-700 transition mt-3"
-            >
-              Fetch Email Now
-            </button>
-          </span>
-        </div>
-      </div>
       <table className="table-fixed break-words border border-gray-300 w-full text-center text-black">
         <thead className="bg-gray-100">
           <tr>
