@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 
-async function getMail(imap_uid: any, page: any) {
+async function getMail(imap_uid: any, page: any, router: any) {
   const res = await fetch(
-    `http://localhost:8000/get-reports-by-id?imap_uid=${imap_uid}&page=${page}&limit=4`,
+    `${process.env.NEXT_PUBLIC_API_BASE_URL}/get-reports-by-id?imap_uid=${imap_uid}&page=${page}&limit=4`,
     {
       cache: "no-store",
       credentials: "include",
@@ -14,7 +14,7 @@ async function getMail(imap_uid: any, page: any) {
   );
 
   if (res.status === 401) {
-    window.location.href = "/login";
+    router.push("/login");
   }
   if (!res.ok) {
     throw new Error("Failed to fetch data");
@@ -31,7 +31,7 @@ const DashboardPage = () => {
   useEffect(() => {
     async function fetchData() {
       try {
-        const mail_Data = await getMail(params.email_uid, page);
+        const mail_Data = await getMail(params.email_uid, page, router);
         setEmailData(mail_Data);
       } catch (err) {
         console.error("Fetch error:", err);
@@ -88,7 +88,6 @@ const DashboardPage = () => {
                 const file_name = email.attachment_result[index].file_name;
                 const report_id = email.attachment_result[index].id;
                 const analysis = email.attachment_result[index].status;
-                console.log("email obj==>", email.attachment_result[index]);
                 return (
                   <tr className="border-t" key={index}>
                     <td className="border px-4 py-2 text-green-600 text-center">
@@ -116,7 +115,7 @@ const DashboardPage = () => {
                           onClick={async () => {
                             try {
                               const response = await fetch(
-                                "http://localhost:8000/analyse-report",
+                                `${process.env.NEXT_PUBLIC_API_BASE_URL}/analyse-report`,
                                 {
                                   method: "POST",
                                   headers: {

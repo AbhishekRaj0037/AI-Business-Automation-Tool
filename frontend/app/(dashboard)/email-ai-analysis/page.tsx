@@ -4,16 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-async function getMails(page: any) {
+async function getMails(page: any, router: any) {
   const res = await fetch(
-    `http://localhost:8000/get-all-reports?page=${page}&limit=5`,
+    `${process.env.NEXT_PUBLIC_API_BASE_URL}/get-all-reports?page=${page}&limit=5`,
     {
       cache: "no-store",
       credentials: "include",
     },
   );
   if (res.status === 401) {
-    window.location.href = "/login";
+    router.push("/login");
   }
 
   if (!res.ok) {
@@ -32,7 +32,7 @@ const DashboardPage = () => {
 
   useEffect(() => {
     async function fetchData() {
-      const mails_Data = await getMails(page);
+      const mails_Data = await getMails(page, router);
       setMailData(mails_Data);
     }
     fetchData();

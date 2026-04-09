@@ -26,14 +26,17 @@ const SignUPPage = () => {
     }
 
     try {
-      const res = await fetch("http://localhost:8000/create-user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/create-user`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify(data), // ✅ fixed
         },
-        credentials: "include",
-        body: JSON.stringify(data), // ✅ fixed
-      });
+      );
 
       const result = await res.json();
 

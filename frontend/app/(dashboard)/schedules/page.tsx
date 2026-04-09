@@ -24,7 +24,7 @@ const DashboardPage = () => {
 
     try {
       const [res] = await Promise.all([
-        fetch("http://localhost:8000/schedule-jobs", {
+        fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/schedule-jobs`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -33,7 +33,7 @@ const DashboardPage = () => {
         new Promise((resolve) => setTimeout(resolve, 2000)), // minimum 2 sec delay
       ]);
       if (res.status === 401) {
-        window.location.href = "/login";
+        router.push("/login");
       }
 
       if (!res.ok) {

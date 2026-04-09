@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 
 const GenerateReportPage = () => {
   const router = useRouter();
+
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -14,15 +15,18 @@ const GenerateReportPage = () => {
     setError("");
 
     try {
-      const res = await fetch("http://localhost:8000/query-document", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ query }),
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/query-document`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ query }),
+        },
+      );
 
       if (res.status === 401) {
-        window.location.href = "/login";
+        router.push("/login");
         return;
       }
 

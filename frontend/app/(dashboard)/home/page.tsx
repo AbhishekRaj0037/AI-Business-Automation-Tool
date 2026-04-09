@@ -26,41 +26,74 @@ const DashboardPage = () => {
   );
   const [isFetching, setIsFetching] = useState(false);
   useEffect(() => {
-    const ws = new WebSocket(`ws://localhost:8000/ws/dashboard`);
-    ws.onopen = () => {
-      console.log("WebSocket connected successfully");
+    let ws: WebSocket;
+    let reconnectTimeout: NodeJS.Timeout;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 10;
+
+    const connect = () => {
+      ws = new WebSocket(`ws://localhost:8000/ws/dashboard`);
+
+      ws.onopen = () => {
+        console.log("WebSocket connected successfully");
+        reconnectAttempts = 0; // reset on successful connection
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log("Received websocket data:", data);
+        setStats(data);
+        if (data.button === "true") setIsFetching(true);
+        else setIsFetching(false);
+      };
+
+      ws.onerror = (err) => {
+        console.log("WebSocket error -> ", err);
+      };
+
+      ws.onclose = (event) => {
+        console.log("WebSocket closed, code:", event.code);
+
+        // Don't reconnect if auth failed
+        if (event.code === 1008) {
+          router.push("/login");
+          return;
+        }
+
+        // Reconnect with exponential backoff
+        if (reconnectAttempts < maxReconnectAttempts) {
+          const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000);
+          console.log(
+            `Reconnecting in ${delay / 1000}s (attempt ${reconnectAttempts + 1})`,
+          );
+          reconnectTimeout = setTimeout(() => {
+            reconnectAttempts++;
+            connect();
+          }, delay);
+        } else {
+          console.log("Max reconnect attempts reached");
+        }
+      };
     };
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log("Received websocket data:", data);
-      console.log("button value:", data.button, "type:", typeof data.button);
-      setStats(data);
-      if (data.button === "true") setIsFetching(true);
-      else setIsFetching(false);
-      console.log("button==>", data.button);
+
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimeout);
+      ws.close();
     };
-    ws.onerror = (err) => {
-      console.log("WebSocket error -> ", err);
-    };
-    ws.onclose = (event) => {
-      console.log("WebSocket closed");
-      console.log("Code:", event);
-      if (event.code === 1008) {
-        window.location.href = "/login";
-      }
-    };
-    return () => ws.close();
   }, []);
+
   const handleToggle = async () => {
     if (!isFetching) {
       setIsFetching(true);
-      await fetch("http://localhost:8000/", {
+      await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}`, {
         cache: "no-store",
         credentials: "include",
       });
     } else {
       setIsFetching(false);
-      await fetch("http://localhost:8000/stop-fetching", {
+      await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/stop-fetching`, {
         cache: "no-store",
         credentials: "include",
       });

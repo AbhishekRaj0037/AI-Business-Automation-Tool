@@ -2,8 +2,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import TiptapEditor from "@/components/TiptapEditor";
+import { useRouter } from "next/navigation";
 
 export default function ReportEditorPage() {
+  const router = useRouter();
   const params = useParams();
   const reportId = params.report_id;
 
@@ -15,11 +17,11 @@ export default function ReportEditorPage() {
     async function fetchReport() {
       try {
         const res = await fetch(
-          `http://localhost:8000/get-report/${reportId}`,
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/get-report/${reportId}`,
           { credentials: "include" },
         );
         if (res.status === 401) {
-          window.location.href = "/login";
+          router.push("/login");
           return;
         }
         if (!res.ok) throw new Error("Failed to fetch report");
@@ -37,7 +39,7 @@ export default function ReportEditorPage() {
   const handleSave = async (tiptapJson: any) => {
     try {
       const res = await fetch(
-        `http://localhost:8000/update-report/${reportId}`,
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/update-report/${reportId}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

@@ -12,7 +12,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from datetime import timezone,datetime,timedelta,time,date
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select,update,desc
+from sqlalchemy import select,update,desc,delete
+from sqlalchemy.dialects.postgresql import insert
 from email.utils import parsedate_to_datetime
 from DataBase import get_session,Session
 import parse_files
@@ -42,13 +43,17 @@ import os
 from langchain_classic.text_splitter import RecursiveCharacterTextSplitter
 import langchain_community.document_loaders as docloader
 from langchain_openai import OpenAIEmbeddings
-from langchain_classic.vectorstores import FAISS
+from langchain_classic.vectorstores import PGVector
 
 from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 from langchain_openai import ChatOpenAI
 
 from email.message import Message
 from bs4 import BeautifulSoup
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 SQLAlchemyJobStoreURL=os.getenv("SQLAlchemyJobStore")
 file_download_path=os.getenv("file_download_path")
@@ -76,7 +81,6 @@ cloudinary.config(
   api_secret = api_secret,
 )
 
-
 s3 = boto3.client(
     "s3",
     aws_access_key_id=aws_access_key,
@@ -90,9 +94,20 @@ REFRESH_TOKEN_EXPIRE_MINUTES=30*60
 
 password_hash=PasswordHash.recommended()
 
+limiter = Limiter(key_func=get_remote_address)
+
 app=FastAPI()
 
+app.state.limiter = limiter
+
 EXCLUDED_PATHS = ["/login-user", "/create-user"]
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request, exc):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many attempts, try again later"}
+    )
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -142,8 +157,6 @@ mail.login(username,password)
 mail.select("inbox")
 
 
-VECTOR_DB=os.getenv("VECTOR_DB")
-
 llm = ChatOpenAI(
     model="openai/gpt-4.1-mini",
     api_key=GPT_MINI,
@@ -159,6 +172,12 @@ embeddings = OpenAIEmbeddings(
     tiktoken_model_name="text-embedding-3-small",
     check_embedding_ctx_length=False,
 )
+
+vectorstore=PGVector(
+        connection_string=os.getenv("DBUrl").replace("+asyncpg", ""),
+        embedding_function=embeddings,
+        collection_name="documents"
+        )
 
 
 my_objects_filter={
@@ -311,8 +330,18 @@ async def process_dashboard(userId,session):
         is_uid_already_synced=is_uid_already_synced.scalars().first()
         if is_uid_already_synced is None:
             report_data=None
-            report_data=model.email_metadata(imap_uid=int(uid),mail_from=mail_from,subject=subject,received_at=received_at,body=formatted_body)
-            session.add(report_data)
+            # report_data=model.email_metadata(imap_uid=int(uid),mail_from=mail_from,subject=subject,received_at=received_at,body=formatted_body)
+            # session.add(report_data)
+            stmt = insert(model.email_metadata).values(
+                imap_uid=int(uid),
+                mail_from=mail_from,
+                subject=subject,
+                received_at=received_at,
+                body=formatted_body
+                ).on_conflict_do_nothing(
+                index_elements=["imap_uid"]
+                )
+            await session.execute(stmt)
             await session.commit()
             for part in raw_message.walk():
                 if part.get_content_maintype() == "multipart":
@@ -371,21 +400,6 @@ async def get_all_reports(session: SessionDep,request:Request,imap_uid:int=Query
     return result
 
 
-@app.post("/get-reports")
-async def get_reports(
-    session: SessionDep,
-    request:Request,
-    objects_filter: str =Query(default=''),
-) -> List[EmailMetaDataOut]:
-    print("Welcome ",request.state.userId)
-    filter_result=FilterCore(model.email_metadata,my_objects_filter)
-    query=filter_result.get_query(objects_filter)
-    db_obj=await session.execute(query)
-    instance=db_obj.scalars().all()
-    return instance
-
-
-
 @app.post("/fetch-mail-data")
 async def get_mail(
     session: SessionDep,
@@ -435,6 +449,7 @@ async def get_mail(
 
 
 @app.post("/create-user")
+@limiter.limit("5/minute")
 async def create_user(session: SessionDep,request: Request):
     body = await request.json()
     result=await session.execute(select(model.User).where(model.User.email==body['email']))
@@ -454,6 +469,7 @@ async def create_user(session: SessionDep,request: Request):
     return {"Status":200,"details":"User Added successfully"}
 
 @app.post("/login-user")
+@limiter.limit("5/minute")
 async def login_user(session: SessionDep,request:Request,response:Response):
     body=await request.json()
     result=await session.execute(select(model.User).where(model.User.email==body['email']))
@@ -469,8 +485,15 @@ async def login_user(session: SessionDep,request:Request,response:Response):
     user={"user_id":result.id,"username":result.username,"email_id":result.email}
     user.update({"exp":access_token_expires})
     encode_jwt_token=jwt.encode(user,JWT_SECRET_KEY,algorithm=ALGORITHM)
-    user=model.Token(token=encode_jwt_token,user_id=result.id)
-    session.add(user)
+    existing=await session.execute(
+    select(model.Token).where(model.Token.user_id == result.id)
+)
+    existing_token=existing.scalars().first()
+    if existing_token:
+        existing_token.token=encode_jwt_token
+    else:
+        user=model.Token(token=encode_jwt_token,user_id=result.id)
+        session.add(user)
     await session.commit()
     response.set_cookie(
         key="jwt_token",
@@ -485,7 +508,8 @@ async def login_user(session: SessionDep,request:Request,response:Response):
 
 
 @app.post("/change-password")
-async def change_password(session: SessionDep,request: Request):
+@limiter.limit("5/minute")
+async def change_password(session: SessionDep,request: Request,response:Response):
     body = await request.json()
     result=await session.execute(select(model.User).where(model.User.id==int(request.state.userId)))
     result=result.scalars().first()
@@ -503,6 +527,11 @@ async def change_password(session: SessionDep,request: Request):
     await session.execute(result)
     await session.commit()
     print("Password changed successfully")
+    await session.execute(
+        delete(model.Token).where(model.Token.user_id==request.state.userId)
+    )
+    await session.commit()
+    response.delete_cookie("jwt_token")
     return {"Status":200,"details":"Password changed successfully"}
 
 @app.get("/user-details")
@@ -521,7 +550,12 @@ async def user_details(session: SessionDep,request:Request):
     return user
 
 @app.post("/logout")
-def logout(response: Response):
+@limiter.limit("5/minute")
+async def logout(request:Request,session: SessionDep,response: Response):
+    await session.execute(
+        delete(model.Token).where(model.Token.user_id==request.state.userId)
+    )
+    await session.commit()
     response.delete_cookie("jwt_token")
     return {"message": "Logged out"}
 
@@ -533,7 +567,7 @@ async def update_file(session: SessionDep,request: Request,file:UploadFile=File(
         result = cloudinary.uploader.upload(
             file_stream,
             asset_folder="AI Business Automation Assistant",
-            public_id=file.filename,
+            public_id=uuid.uuid4().hex,
             overwrite=True,
             resource_type="auto"
         )
@@ -623,19 +657,7 @@ async def analyse_report(session: SessionDep,request:Request):
         file_bytes=response["Body"].read()
         loaded_docs=parse_files.parse_file(file_bytes,file_name,s3_key)
         doc_chunks=splitter.split_documents(loaded_docs)
-        if os.path.exists(VECTOR_DB):
-            vectorstore=FAISS.load_local(
-                VECTOR_DB,
-                embeddings,
-                allow_dangerous_deserialization=True
-            )
-            print("Loaded existing vector DB!")
-            vectorstore.add_documents(doc_chunks)
-            print("Updated vector DB!")
-        else:
-            vectorstore = FAISS.from_documents(doc_chunks, embeddings)
-            print("Created new vector DB!")
-        vectorstore.save_local(VECTOR_DB)
+        vectorstore.add_documents(doc_chunks)
         result=update(model.email_attachments_metadata).where(model.email_attachments_metadata.id == report_id).values(status=StatusEnum.completed)
         await session.execute(result)
         await session.commit()
@@ -658,16 +680,6 @@ async def search_document(session: SessionDep,request:Request):
     print("Welcome ",request.state.userId)
     body=await request.json()
     query=body["query"]
-    if os.path.exists(VECTOR_DB):
-        vectorstore=FAISS.load_local(
-            VECTOR_DB,
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
-        print("Loaded existing vector DB!")
-    else:
-        print("No files to query!")
-        return 
     try:
         retriever=vectorstore.as_retriever(
             search_type="similarity",
@@ -679,27 +691,23 @@ async def search_document(session: SessionDep,request:Request):
         for i, doc in enumerate(retrieved_docs):
             chunk_id = f"chunk_{i}"
             context_parts.append(f"[SOURCE:{chunk_id}]\n{doc.page_content}")
-            # doc.metadata comes from how you ingested the documents
-            for i, doc in enumerate(retrieved_docs):
-                chunk_id = f"chunk_{i}"
-                context_parts.append(f"[SOURCE:{chunk_id}]\n{doc.page_content}")
-                file_type = doc.metadata.get("file_type", "")
-                source = {
-                    "s3_key": doc.metadata.get("s3_key", ""),
-                    "file_name": doc.metadata.get("file_name", "unknown"),
-                    "file_type": file_type,
-                }
-                if file_type == "pdf":
-                    source["page"] = doc.metadata.get("page", None)
+            file_type = doc.metadata.get("file_type", "")
+            source = {
+                "s3_key": doc.metadata.get("s3_key", ""),
+                "file_name": doc.metadata.get("file_name", "unknown"),
+                "file_type": file_type,
+            }
+            if file_type == "pdf":
+                source["page"] = doc.metadata.get("page", None)
 
-                elif file_type == "excel":
-                    source["sheet"] = doc.metadata.get("sheet", None)
-                    source["row_count"] = doc.metadata.get("row_count", None)
+            elif file_type == "excel":
+                source["sheet"] = doc.metadata.get("sheet", None)
+                source["row_count"] = doc.metadata.get("row_count", None)
 
-                elif file_type == "docx":
-                    source["section"] = doc.metadata.get("section", None)
+            elif file_type == "docx":
+                source["section"] = doc.metadata.get("section", None)
 
-                source_map[chunk_id] = source
+            source_map[chunk_id] = source
         context = "\n\n".join(context_parts)
         system_prompt = """You are a report generator. Given context from source documents,
     generate a structured report. Respond ONLY with valid JSON, no markdown, no backticks.

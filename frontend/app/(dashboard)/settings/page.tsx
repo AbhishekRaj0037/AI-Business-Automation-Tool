@@ -2,6 +2,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type User = {
   email: string;
@@ -9,64 +10,8 @@ type User = {
   username: string;
 };
 
-const handleSubmit = async (e: any) => {
-  e.preventDefault();
-
-  const form = e.target;
-  const formData = new FormData(form);
-
-  const data = {
-    current_password: formData.get("current_password")?.toString().trim(),
-    new_password: formData.get("new_password")?.toString().trim(),
-    confirm_new_password: formData
-      .get("confirm_new_password")
-      ?.toString()
-      .trim(),
-  };
-
-  console.log("FORM DATA:", data);
-
-  // 🔴 Check empty fields
-  if (
-    !data.current_password ||
-    !data.new_password ||
-    !data.confirm_new_password
-  ) {
-    alert("All fields are required");
-    return;
-  }
-
-  if (data.new_password !== data.confirm_new_password) {
-    alert("Passwords do not match");
-    return;
-  }
-
-  try {
-    const res = await fetch("http://localhost:8000/change-password", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
-      body: JSON.stringify(data),
-    });
-
-    const result = await res.json();
-
-    if (!res.ok) {
-      alert(result.message || "Error");
-      return;
-    }
-
-    alert("Password updated successfully");
-    form.reset();
-  } catch (err) {
-    console.error(err);
-    alert("Something went wrong");
-  }
-};
-
 const DashboardPage = () => {
+  const router = useRouter();
   const [userDetail, setdetail] = useState<User | null>(null);
   const [profile_photo, set_Photo] = useState<File | null>(null);
 
@@ -84,7 +29,7 @@ const DashboardPage = () => {
     formData.append("file", profile_photo);
 
     const res = await fetch(
-      "http://localhost:8000/upload-file?file_type=profile_photo",
+      `${process.env.NEXT_PUBLIC_API_BASE_URL}/upload-file?file_type=profile_photo`,
       {
         method: "POST",
         body: formData,
@@ -102,13 +47,73 @@ const DashboardPage = () => {
     set_Photo(null);
     window.location.reload();
   };
+  const handleSubmit = async (e: any) => {
+    e.preventDefault();
+
+    const form = e.target;
+    const formData = new FormData(form);
+
+    const data = {
+      current_password: formData.get("current_password")?.toString().trim(),
+      new_password: formData.get("new_password")?.toString().trim(),
+      confirm_new_password: formData
+        .get("confirm_new_password")
+        ?.toString()
+        .trim(),
+    };
+
+    console.log("FORM DATA:", data);
+
+    // 🔴 Check empty fields
+    if (
+      !data.current_password ||
+      !data.new_password ||
+      !data.confirm_new_password
+    ) {
+      alert("All fields are required");
+      return;
+    }
+
+    if (data.new_password !== data.confirm_new_password) {
+      alert("Passwords do not match");
+      return;
+    }
+
+    try {
+      const res = await fetch("http://localhost:8000/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        alert(result.message || "Error");
+        return;
+      }
+
+      alert("Password updated successfully");
+      form.reset();
+      router.push("/login");
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong");
+    }
+  };
 
   useEffect(() => {
     const fetchUser = async () => {
-      const res = await fetch(`http://localhost:8000/user-details`, {
-        cache: "no-store",
-        credentials: "include",
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/user-details`,
+        {
+          cache: "no-store",
+          credentials: "include",
+        },
+      );
       if (res.status === 401) {
         window.location.href = "/login";
       }

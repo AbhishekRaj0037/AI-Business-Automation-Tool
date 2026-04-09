@@ -4,16 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-async function getReports(page: any) {
+async function getReports(page: any, router: any) {
   const res = await fetch(
-    `http://localhost:8000/get-all-ai-reports?page=${page}&limit=5`,
+    `${process.env.NEXT_PUBLIC_API_BASE_URL}/get-all-ai-reports?page=${page}&limit=5`,
     {
       cache: "no-store",
       credentials: "include",
     },
   );
   if (res.status === 401) {
-    window.location.href = "/login";
+    router.push("/login");
   }
 
   if (!res.ok) {
@@ -24,6 +24,7 @@ async function getReports(page: any) {
 }
 
 const DashboardPage = () => {
+  const router = useRouter();
   const [reports, setReportData] = useState<any[]>([]);
   const [page, setPage] = useState(1);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -40,7 +41,7 @@ const DashboardPage = () => {
   };
   useEffect(() => {
     async function fetchData() {
-      const mails_Data = await getReports(page);
+      const mails_Data = await getReports(page, router);
       setReportData(mails_Data);
     }
     fetchData();
