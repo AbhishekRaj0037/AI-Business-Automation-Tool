@@ -2,7 +2,7 @@ from sqlalchemy import Column,Integer,String,Boolean,ForeignKey,DateTime,BigInte
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base,mapped_column,Mapped
 from enum import Enum
-import datetime
+import uuid
 
 Base=declarative_base()
 
@@ -26,10 +26,10 @@ class ScheduleEnum(str,Enum):
 
 class User(Base):
     __tablename__="User"
-    id=Column(Integer,primary_key=True)
+    id=Column(String,primary_key=True,default=lambda: str(uuid.uuid4()))
     username=Column(String,nullable=False)
     password=Column(String,nullable=False)
-    email=Column(String,unique=True,nullable=False)
+    email=Column(String,unique=True,nullable=True)
     profile_photo=Column(String,nullable=True)
     disabed=Column(Boolean,default=False)
 
@@ -38,10 +38,10 @@ class User(Base):
             f"<email_metadata("
             f"id={self.id}, "
             f"username={self.username}, "
-            f"password={self.password})>"
+            f"password={self.password} "
             f"email={self.email}, "
             f"email={self.profile_photo}, "
-            f"disabed={self.disabed}, "
+            f"disabed={self.disabed})>"
         )
     
 class Token(Base):
@@ -49,7 +49,7 @@ class Token(Base):
 
     id=Column(Integer,primary_key=True)
     token=Column(String,nullable=False)
-    user_id=Column(Integer,ForeignKey("User.id"))
+    user_id=Column(String,ForeignKey("User.id"))
 
     def __repr__(self):
         return (
@@ -63,6 +63,7 @@ class Token(Base):
 class email_metadata(Base):
     __tablename__="EmailData"
     id=Column(Integer,primary_key=True)
+    user_id=Column(String,ForeignKey("User.id"))
     imap_uid=Column(Integer,unique=True,nullable=False)
     subject=Column(String)
     body=Column(String)
@@ -74,17 +75,19 @@ class email_metadata(Base):
         return (
             f"<email_metadata("
             f"id={self.id}, "
+            f"user_id={self.user_id}, "
             f"imap_uid={self.imap_uid}, "
-            f"subject={self.subject})>"
+            f"subject={self.subject}"
             f"body={self.body})>"
             f"mail_from={self.mail_from},"
             f"received_at={self.received_at}, "
-            f"status={self.status},"
+            f"status={self.status})>"
         )
 
 class email_attachments_metadata(Base):
     __tablename__="AttachmentData"
     id=Column(Integer,primary_key=True)
+    user_id=Column(String,ForeignKey("User.id"))
     imap_uid=Column(Integer,ForeignKey("EmailData.imap_uid"))
     s3_key=Column(String)
     file_name=Column(String)
@@ -97,19 +100,20 @@ class email_attachments_metadata(Base):
         return (
             f"<AttachmentData("
             f"id={self.id}, "
+            f"user_id={self.user_id}, "
             f"imap_uid={self.imap_uid}, "
             f"s3_key={self.s3_key}, "
             f"file_name={self.file_name})>"
             f"file_size={self.file_size},"
             f"status={self.status},"
-            f"checksum_sha256={self.checksum_sha256},"
+            f"checksum_sha256={self.checksum_sha256})>"
         )
     
 
 class dashboard_schedules(Base):
     __tablename__="dashboard_update"
     id=Column(Integer,primary_key=True)
-    user_id=Column(Integer,ForeignKey("User.id"))
+    user_id=Column(String,ForeignKey("User.id"))
     schedule_frequency:Mapped[ScheduleEnum]=mapped_column(default=ScheduleEnum.disabled)
     schedule_time=Column(DateTime, nullable=True, default=None)
     last_run_at=Column(DateTime, nullable=True, default=None)
@@ -125,13 +129,13 @@ class dashboard_schedules(Base):
             f"schedule_time={self.schedule_time},"
             f"last_run_at={self.last_run_at},"
             f"next_run_at={self.next_run_at},"
-            f"is_active={self.is_active},"
+            f"is_active={self.is_active})>"
         )
     
 class reports(Base):
     __tablename__="generated_reports"
     id=Column(Integer,primary_key=True)
-    user_id=Column(Integer,ForeignKey("User.id"))
+    user_id=Column(String,ForeignKey("User.id"))
     report_name=Column(String)
     report_type=Column(String, nullable=False)
     tiptap_json=Column(JSONB,nullable=False)
@@ -157,6 +161,6 @@ class reports(Base):
             f"export_format={self.export_format}, "
             f"report_summary={self.report_summary}, "
             f"generated_at={self.generated_at}, "
-            f"updated_at={self.updated_at}, "
+            f"updated_at={self.updated_at})>"
         )
 

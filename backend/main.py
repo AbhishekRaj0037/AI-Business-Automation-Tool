@@ -289,7 +289,7 @@ def get_email_body(msg: Message) -> str:
 @app.get("/")
 async def read_root(request:Request,session: SessionDep):
     await websocket_dashboard.set_task_status(request.state.userId,"true")
-    await process_dashboard(request.state.userId,session)
+    await process_dashboard(request.state.userId,request.state.username,session)
 
 @app.get("/stop-fetching")
 async def stop_fetching(request:Request,session: SessionDep):
@@ -301,8 +301,8 @@ async def fetch_status(request:Request,session: SessionDep):
     status=await websocket_dashboard.get_task_status(request.state.userId)
     return {"is_fetching":status=="true"}
 
-async def process_dashboard(userId,session):
-    print("Welcome ",userId)
+async def process_dashboard(userId,username,session):
+    print("Welcome ",username)
     result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)).limit(1))
     result=result.scalars().first()
     starting_uid_range=0
@@ -313,9 +313,9 @@ async def process_dashboard(userId,session):
     for uid in uid_list:
         status=await websocket_dashboard.get_task_status(userId)
         if status != "true":
-            print(f"Stopped fetching for {userId}")
+            print(f"Stopped fetching for {username}")
             break
-        print(f"Fetching emails for {userId}...")
+        print(f"Fetching emails for {username}...")
         mail_data=mail.fetch(uid,'RFC822')
         raw=mail_data[1][0][1]
         raw_message=email.message_from_bytes(raw)
@@ -330,8 +330,6 @@ async def process_dashboard(userId,session):
         is_uid_already_synced=is_uid_already_synced.scalars().first()
         if is_uid_already_synced is None:
             report_data=None
-            # report_data=model.email_metadata(imap_uid=int(uid),mail_from=mail_from,subject=subject,received_at=received_at,body=formatted_body)
-            # session.add(report_data)
             stmt = insert(model.email_metadata).values(
                 imap_uid=int(uid),
                 mail_from=mail_from,
@@ -359,6 +357,7 @@ async def process_dashboard(userId,session):
                         content_type = part.get_content_type()
                         file_data=model.email_attachments_metadata(imap_uid=int(uid),file_name=filename,file_type=content_type,file_size=len(file_bytes),status=StatusEnum.incomplete,checksum_sha256="!231231231231!",s3_key=s3_key)
                         session.add(file_data)
+                        await session.commit()
                     except Exception as e:
                         print("Error:  ",e)
             await update_user_dashboard(userId,stats_changes={
@@ -369,7 +368,7 @@ async def process_dashboard(userId,session):
 
 @app.get("/get-all-reports")
 async def get_all_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(5)):
-    print("Welcome ",request.state.userId)
+    print("Welcome ",request.state.username)
     offset=(page-1)*limit
     result=await session.execute(select(model.email_metadata).offset(offset).order_by(desc(model.email_metadata.imap_uid)).limit(limit))
     result=result.scalars().all()
@@ -377,7 +376,7 @@ async def get_all_reports(session: SessionDep,request:Request,page:int=Query(1),
    
 @app.get("/get-reports-by-id")
 async def get_all_reports(session: SessionDep,request:Request,imap_uid:int=Query(1),page:int=Query(1),limit:int=Query(4)):
-    print("Welcome ",request.state.userId)
+    print("Welcome ",request.state.username)
     mail_result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
     mail_result=mail_result.scalars().first()
     offset=(page-1)*limit
@@ -406,7 +405,7 @@ async def get_mail(
     imap_uid:str,
     request:Request,
 ):  
-    print("Welcome ",request.state.userId)
+    print("Welcome ",request.state.username)
     mail_data=mail.fetch(imap_uid,'RFC822')
     raw=mail_data[1][0][1]
     raw_message=email.message_from_bytes(raw)
@@ -426,7 +425,7 @@ async def get_mail(
         filename=part.get_filename()
         if filename:
             checksum = checksum_from_part(part)
-            is_uid_already_present=await session.execute(select(model.email_attachments_metadata).join(model.email_metadata,model.email_attachments_metadata.email_id==model.email_metadata.id).where(model.email_metadata.imap_uid==int(imap_uid) and model.email_attachments_metadata.checksum_sha256==checksum))
+            is_uid_already_present=await session.execute(select(model.email_attachments_metadata).join(model.email_metadata,model.email_attachments_metadata.imap_uid==model.email_metadata.id).where(model.email_metadata.imap_uid==int(imap_uid) and model.email_attachments_metadata.checksum_sha256==checksum))
             is_uid_already_present=is_uid_already_present.scalars().all()
             if is_uid_already_present == []:
                 result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid))) 
@@ -452,17 +451,17 @@ async def get_mail(
 @limiter.limit("5/minute")
 async def create_user(session: SessionDep,request: Request):
     body = await request.json()
-    result=await session.execute(select(model.User).where(model.User.email==body['email']))
+    result=await session.execute(select(model.User).where(model.User.username==body['name']))
     result=result.scalars().all()
     if result != []:
         print("User already exsist")
         return
     hashed_password= password_hash.hash(body['password'])
-    user=model.User(username=body['name'],password=hashed_password,email=body['email'])
+    user=model.User(username=body['name'],password=hashed_password)
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    schedule_update=model.dashboard_schedules(user_id=int(user.id),schedule_frequency=ScheduleEnum.disabled,is_active=False)
+    schedule_update=model.dashboard_schedules(user_id=user.id,schedule_frequency=ScheduleEnum.disabled,is_active=False)
     session.add(schedule_update)
     await session.commit()
     print("User Added to DB")
@@ -472,7 +471,7 @@ async def create_user(session: SessionDep,request: Request):
 @limiter.limit("5/minute")
 async def login_user(session: SessionDep,request:Request,response:Response):
     body=await request.json()
-    result=await session.execute(select(model.User).where(model.User.email==body['email']))
+    result=await session.execute(select(model.User).where(model.User.username==body['name']))
     result=result.scalars().first()
     if result is None:
         print("User doesn't exsist")
@@ -482,7 +481,7 @@ async def login_user(session: SessionDep,request:Request,response:Response):
         raise HTTPException(status_code=401,detail="Password Incorrect")
     
     access_token_expires=datetime.now(timezone.utc)+timedelta(minutes=30)
-    user={"user_id":result.id,"username":result.username,"email_id":result.email}
+    user={"user_id":result.id,"username":result.username}
     user.update({"exp":access_token_expires})
     encode_jwt_token=jwt.encode(user,JWT_SECRET_KEY,algorithm=ALGORITHM)
     existing=await session.execute(
@@ -511,7 +510,7 @@ async def login_user(session: SessionDep,request:Request,response:Response):
 @limiter.limit("5/minute")
 async def change_password(session: SessionDep,request: Request,response:Response):
     body = await request.json()
-    result=await session.execute(select(model.User).where(model.User.id==int(request.state.userId)))
+    result=await session.execute(select(model.User).where(model.User.id==request.state.userId))
     result=result.scalars().first()
     if result is None:
         print("User doesn't exsist")
@@ -572,7 +571,7 @@ async def update_file(session: SessionDep,request: Request,file:UploadFile=File(
             resource_type="auto"
         )
         url = result["url"]
-        result=update(model.User).where(model.User.id == int(request.state.userId)).values(profile_photo=url)
+        result=update(model.User).where(model.User.id == request.state.userId).values(profile_photo=url)
         await session.execute(result)
         await session.commit()
         return {"url": url}
@@ -581,27 +580,9 @@ async def update_file(session: SessionDep,request: Request,file:UploadFile=File(
         await session.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# @app.get("/me")
-# async def get_current_user(jwt_token:str=Cookie(None)):
-#     breakpoint()
-#     if not jwt_token:
-#         raise HTTPException(status_code=401,detail="Not authenticated")
-#     try:
-#         payload=jwt.decode(jwt_token,JWT_SECRET_KEY,algorithms=ALGORITHM)
-#         username=payload.get("sub")
-#         if username is None:
-#             raise HTTPException(status_code=401,detail="Incorrect credential")
-#     except Exception as err:
-#         print("Error authenticating user: ",err)
-#         raise HTTPException(status_code=401,detail="Unauthorized credential")
-#     print("Welcome ",username)
-    
-#     return {"message":f"{username} authenticated"}
-
 @app.post("/update-report-status")
 async def update_report_status(session: SessionDep,request:Request):
-    print("Welcome ",request.state.userId)
+    print("Welcome ",request.state.username)
     body=await request.json()
     report_id=body["report_id"]
     report_status=StatusEnum[body["report_status"]]
@@ -611,7 +592,7 @@ async def update_report_status(session: SessionDep,request:Request):
 
 @app.get("/get-all-ai-reports")
 async def get_all_ai_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(5)):
-    print("Welcome ",request.state.userId)
+    print("Welcome ",request.state.username)
     offset=(page-1)*limit
     result=await session.execute(select(model.reports).offset(offset).order_by(desc(model.reports.id)).limit(limit))
     result=result.scalars().all()
@@ -619,7 +600,7 @@ async def get_all_ai_reports(session: SessionDep,request:Request,page:int=Query(
 
 @app.get("/get-ai-reports-by-id")
 async def get_all_ai_reports(session: SessionDep,request:Request,report_id:str):
-    print("Welcome ",request.state.userId)
+    print("Welcome ",request.state.username)
     report_result=await session.execute(select(model.reports).where(model.reports.id==int(report_id)))
     report_result=report_result.scalars().first()
     url = s3.generate_presigned_url(
@@ -677,7 +658,7 @@ async def analyse_report(session: SessionDep,request:Request):
 
 @app.post("/query-document")
 async def search_document(session: SessionDep,request:Request):
-    print("Welcome ",request.state.userId)
+    print("Welcome ",request.state.username)
     body=await request.json()
     query=body["query"]
     try:
@@ -873,7 +854,8 @@ async def dashboard_ws(websocket:WebSocket):
             while True:
                 await websocket.receive_text()
         except Exception as e:
-            print("Data receive error:", e)
+            print("Client dissconected !")
+            print("Giving error: ",e)
 
     monitor_task = asyncio.create_task(token_monitor())
     receive_task = asyncio.create_task(receive_loop())
@@ -891,7 +873,7 @@ async def dashboard_ws(websocket:WebSocket):
 
 @app.post("/schedule-jobs")
 async def search_document(session: SessionDep,request:Request):
-    print("Welcome ",request.state.userId)
+    print("Welcome ",request.state.username)
     body=await request.json()
     hour = int(body["hour"])
     minute = int(body["minute"])
@@ -946,10 +928,11 @@ async def run_scheduled_jobs():
 
         for schedule in schedules:
             user_id=schedule.user_id
-            result=await session.execute(select(model.User).where(model.User.id==int(user_id))) 
+            result=await session.execute(select(model.User).where(model.User.id==user_id)) 
             result=result.scalars().one()
+            username=result.username
             await websocket_dashboard.set_task_status(result.id,"true")
-            await process_dashboard(result.id,session)
+            await process_dashboard(result.id,username,session)
             await websocket_dashboard.set_task_status(result.id,"false")
             next_run_at=schedule.next_run_at
             if schedule.schedule_frequency==ScheduleEnum.everyday:

@@ -8,9 +8,6 @@ import Link from "next/link";
 const DashboardPage = () => {
   const router = useRouter();
   const [buttonStatus, setButtonStatus] = useState(false);
-  useEffect(() => {
-    async function fetchData() {}
-  });
   const handleSubmit = async (e: any) => {
     e.preventDefault();
 

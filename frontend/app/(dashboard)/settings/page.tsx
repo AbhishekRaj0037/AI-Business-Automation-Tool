@@ -80,14 +80,17 @@ const DashboardPage = () => {
     }
 
     try {
-      const res = await fetch("http://localhost:8000/change-password", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/change-password`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify(data),
         },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
+      );
 
       const result = await res.json();
 

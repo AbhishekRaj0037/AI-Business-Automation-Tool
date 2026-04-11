@@ -15,12 +15,11 @@ const SignUPPage = () => {
 
     const data = {
       name: formData.get("name")?.toString().trim(),
-      email: formData.get("email")?.toString().trim(),
       password: formData.get("password")?.toString().trim(),
     };
 
     // 🔴 validation
-    if (!data.name || !data.email || !data.password) {
+    if (!data.name || !data.password) {
       alert("All fields are required");
       return;
     }
@@ -70,7 +69,7 @@ const SignUPPage = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Full Name
+              Username
             </label>
             <input
               type="text" // ✅ fixed
@@ -80,20 +79,6 @@ const SignUPPage = () => {
               onChange={(e) => setName(e.target.value)}
             />
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email Address
-            </label>
-            <input
-              type="email"
-              name="email"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-              placeholder="your@email.com"
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Password
@@ -106,12 +91,6 @@ const SignUPPage = () => {
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-
-          <div className="flex items-center">
-            <input type="checkbox" className="mr-2" />
-            <span className="text-sm text-gray-600">Remember me</span>
-          </div>
-
           {/* ✅ button should be submit */}
           <button
             type="submit"

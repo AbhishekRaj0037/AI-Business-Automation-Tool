@@ -75,10 +75,13 @@ const Menubar = () => {
     setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8000/logout", {
-        method: "POST",
-        credentials: "include", // important for cookies
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/logout`,
+        {
+          method: "POST",
+          credentials: "include", // important for cookies
+        },
+      );
 
       if (!res.ok) {
         alert("Logout failed");
@@ -97,10 +100,13 @@ const Menubar = () => {
 
   useEffect(() => {
     const fetchSchedule = async () => {
-      const res = await fetch(`http://localhost:8000/user-details`, {
-        cache: "no-store",
-        credentials: "include",
-      });
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/user-details`,
+        {
+          cache: "no-store",
+          credentials: "include",
+        },
+      );
       if (res.status === 401) {
         window.location.href = "/login";
       }
