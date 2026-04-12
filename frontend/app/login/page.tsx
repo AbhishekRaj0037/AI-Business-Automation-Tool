@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 const LoginPage = () => {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
@@ -21,7 +21,7 @@ const LoginPage = () => {
         },
         credentials: "include",
         body: JSON.stringify({
-          email,
+          name,
           password,
         }),
       },
@@ -56,9 +56,9 @@ const LoginPage = () => {
               <input
                 type="name"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                placeholder="your@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                placeholder="xyz"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
               />
             </div>
 

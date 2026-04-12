@@ -4,6 +4,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+type User = {
+  email: string;
+  profile_photo_url: string;
+  username: string;
+  schedule: {
+    schedule_time: string;
+    id: Number;
+    next_run_at: string;
+    schedule_frequency: string;
+    last_run_at: string;
+    user_id: Number;
+  };
+};
+
 async function getMails(page: any, router: any) {
   const res = await fetch(
     `${process.env.NEXT_PUBLIC_API_BASE_URL}/get-all-reports?page=${page}&limit=5`,
@@ -29,9 +43,39 @@ const DashboardPage = () => {
   const [mails, setMailData] = useState<any[]>([]);
   const [emails, setEmails] = useState([]);
   const [page, setPage] = useState(1);
+  const [userDetail, setUserDetail] = useState<User | null>(null);
+
+  async function handleAddGmail() {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/gmail`,
+      {
+        cache: "no-store",
+        credentials: "include",
+      },
+    );
+    if (res.status === 401) {
+      router.push("/login");
+    }
+
+    if (!res.ok) {
+      throw new Error("Failed to fetch data");
+    }
+    const data = await res.json();
+    console.log("We are i. handleaddgmail", data);
+    router.push(data);
+  }
 
   useEffect(() => {
     async function fetchData() {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/user-details`,
+        {
+          cache: "no-store",
+          credentials: "include",
+        },
+      );
+      const res_data = await res.json();
+      setUserDetail(res_data);
       const mails_Data = await getMails(page, router);
       setMailData(mails_Data);
     }
@@ -42,8 +86,18 @@ const DashboardPage = () => {
     <div>
       <div className="text-black text-3xl pt-12">Emails - Inbox</div>
 
-      <div className="text-black text-l pt-4 whitespace-nowrap mb-2">
-        Real-time visibility into fetched emails and AI analysis status
+      <div className="flex justify-between items-center mb-2">
+        <div className="text-black text-l pt-4 whitespace-nowrap">
+          Real-time visibility into fetched emails and AI analysis status
+        </div>
+        {userDetail !== null && userDetail.email === null && (
+          <button
+            className="bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700 transition mt-4"
+            onClick={handleAddGmail}
+          >
+            + Add Gmail Account
+          </button>
+        )}
       </div>
 
       <table className="table-fixed break-words border border-gray-300 w-full text-center text-black">

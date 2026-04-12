@@ -1,6 +1,4 @@
 "use client";
-import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -137,9 +135,9 @@ const DashboardPage = () => {
 
   return (
     <div>
-      <div className="text-black text-3xl pt-12 pb-3">Settings</div>
-      <div className="mb-2">
-        <div className="border text-black border-gray-300 h-85 rounded-md pl-4">
+      <div className="text-black text-3xl pt-12 pb-3 ">Settings</div>
+      <div className="mb-2 ">
+        <div className="border text-black border-gray-300 h-85 rounded-md pl-4 ">
           <span className="text-2xl">Profile Image</span>
           <div className="mt-auto flex items-center gap-2 px-2 text-gray-500 pl-4 pb-2">
             <img

@@ -2,7 +2,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 
 type DashboardStats = {
   userId: number;
@@ -21,11 +22,16 @@ type DashboardStats = {
 
 const DashboardPage = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const gmailStatus = searchParams.get("gmail");
   const [websocket_incoming_data, setStats] = useState<DashboardStats | null>(
     null,
   );
   const [isFetching, setIsFetching] = useState(false);
   useEffect(() => {
+    if (gmailStatus == "connected") {
+      toast.success("Gmail connected successfully!");
+    }
     let ws: WebSocket;
     let reconnectTimeout: NodeJS.Timeout;
     let reconnectAttempts = 0;
@@ -82,7 +88,7 @@ const DashboardPage = () => {
       clearTimeout(reconnectTimeout);
       ws.close();
     };
-  }, []);
+  }, [gmailStatus]);
 
   const handleToggle = async () => {
     if (!isFetching) {

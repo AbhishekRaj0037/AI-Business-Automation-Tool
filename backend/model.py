@@ -31,6 +31,9 @@ class User(Base):
     password=Column(String,nullable=False)
     email=Column(String,unique=True,nullable=True)
     profile_photo=Column(String,nullable=True)
+    refresh_token=Column(String,nullable=True)
+    access_token=Column(String,nullable=True)
+    token_expiry=Column(DateTime,nullable=True)
     disabed=Column(Boolean,default=False)
 
     def __repr__(self):
@@ -40,7 +43,10 @@ class User(Base):
             f"username={self.username}, "
             f"password={self.password} "
             f"email={self.email}, "
-            f"email={self.profile_photo}, "
+            f"profile_photo={self.profile_photo}, "
+            f"refresh_token={self.refresh_token}, "
+            f"access_token={self.access_token}, "
+            f"token_expiry={self.token_expiry}, "
             f"disabed={self.disabed})>"
         )
     

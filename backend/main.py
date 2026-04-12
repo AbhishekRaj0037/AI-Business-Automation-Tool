@@ -1,8 +1,8 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket,Response,Cookie,UploadFile,File
+from fastapi import FastAPI,Query,HTTPException,Depends,Request,WebSocket,Response,Cookie,UploadFile,File,BackgroundTasks
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse,RedirectResponse
 from websocket_dashboard import ConnectionManager,update_user_dashboard,r
 from fastapi_sa_orm_filter.operators import Operators as ops
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,6 +54,14 @@ from bs4 import BeautifulSoup
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import Flow
+import google.auth.transport.requests
+
+
+os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 
 SQLAlchemyJobStoreURL=os.getenv("SQLAlchemyJobStore")
 file_download_path=os.getenv("file_download_path")
@@ -152,11 +160,6 @@ app.add_middleware(
 
 manager=ConnectionManager()
 
-mail= imaplib.IMAP4_SSL(imap_server)
-mail.login(username,password)
-mail.select("inbox")
-
-
 llm = ChatOpenAI(
     model="openai/gpt-4.1-mini",
     api_key=GPT_MINI,
@@ -201,7 +204,28 @@ job_defaults={
 
 scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=job_defaults)
 
+async def get_imap_connection(userId: str, session):
+    result = await session.execute(select(model.User).where(model.User.id == userId))
+    user = result.scalars().first()
 
+    if user.token_expiry and user.token_expiry < datetime.utcnow():
+        credentials = Credentials(
+            token=user.access_token,
+            refresh_token=user.refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id="YOUR_CLIENT_ID",
+            client_secret="YOUR_CLIENT_SECRET"
+        )
+        credentials.refresh(google.auth.transport.requests.Request())
+
+        user.access_token = credentials.token
+        user.token_expiry = credentials.expiry
+        await session.commit()
+
+    imap = imaplib.IMAP4_SSL("imap.gmail.com")
+    auth_string = f"user={user.email}\x01auth=Bearer {user.access_token}\x01\x01"
+    imap.authenticate("XOAUTH2", lambda x: auth_string.encode())
+    return imap
 
 async def get_dashboard_stats(userId: str):
     today =date.today()
@@ -308,6 +332,8 @@ async def process_dashboard(userId,username,session):
     starting_uid_range=0
     if result is not None:
          starting_uid_range=result.imap_uid
+    mail= await get_imap_connection(userId,session)
+    mail.select("inbox")
     uids=mail.uid('search', None, f'UID {starting_uid_range + 1}:*')
     uid_list=uids[1][0].split()
     for uid in uid_list:
@@ -579,6 +605,54 @@ async def update_file(session: SessionDep,request: Request,file:UploadFile=File(
     except Exception as e:
         await session.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.get("/auth/gmail")
+async def gmail_auth(session:SessionDep,request:Request):
+    flow=Flow.from_client_secrets_file(
+        "client_secret.json",
+        scopes=["https://mail.google.com/","https://www.googleapis.com/auth/userinfo.email","openid"],
+        redirect_uri="http://localhost:8000/api/auth/gmail/callback"
+    )
+    auth_url,state=flow.authorization_url(
+        access_type="offline",
+        prompt="consent"
+    )
+    await websocket_dashboard.r.set(f"oauth_verifier:{state}", flow.code_verifier, ex=600)
+    return auth_url
+
+@app.get("/api/auth/gmail/callback")
+async def gmail_callback(code:str,state:str,session:SessionDep,request:Request):
+    code_verifier = await websocket_dashboard.r.get(f"oauth_verifier:{state}")
+    if not code_verifier:
+        raise HTTPException(400, "Invalid or expired state")
+    await websocket_dashboard.r.delete(f"oauth_verifier:{state}")
+    flow=Flow.from_client_secrets_file(
+        "client_secret.json",
+        scopes=["https://mail.google.com/"],
+        redirect_uri="http://localhost:8000/api/auth/gmail/callback"
+    )
+    flow.code_verifier = code_verifier
+    flow.fetch_token(code=code)
+    credentials=flow.credentials
+    service = build("gmail", "v1", credentials=credentials)
+    profile = service.users().getProfile(userId="me").execute()
+    user=update(model.User).where(model.User.id==request.state.userId).values(email=profile["emailAddress"],refresh_token=credentials.refresh_token,access_token=credentials.token,token_expiry=credentials.expiry)
+    await session.execute(user)
+    await session.commit()
+    background_tasks = BackgroundTasks()
+    background_tasks.add_task(
+        process_dashboard,
+        user_id=request.state.userId,
+        access_token=credentials.token
+    )
+    return RedirectResponse(
+        url="http://localhost:3000/home?gmail=connected",
+        status_code=302,
+        background=background_tasks  # runs after redirect is sent
+    )
+
+
 
 @app.post("/update-report-status")
 async def update_report_status(session: SessionDep,request:Request):
@@ -589,6 +663,7 @@ async def update_report_status(session: SessionDep,request:Request):
     report=update(model.email_attachments_metadata).where(model.email_attachments_metadata.id==int(report_id)).values(status=report_status)
     await session.execute(report)
     await session.commit()
+    return
 
 @app.get("/get-all-ai-reports")
 async def get_all_ai_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(5)):
