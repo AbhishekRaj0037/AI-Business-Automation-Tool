@@ -61,7 +61,6 @@ const DashboardPage = () => {
       throw new Error("Failed to fetch data");
     }
     const data = await res.json();
-    console.log("We are i. handleaddgmail", data);
     router.push(data);
   }
 
@@ -97,6 +96,11 @@ const DashboardPage = () => {
           >
             + Add Gmail Account
           </button>
+        )}
+        {userDetail !== null && userDetail.email !== null && (
+          <div className="border-2 border-blue-600 bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg mt-4 text-center">
+            {userDetail.email}
+          </div>
         )}
       </div>
 
@@ -172,6 +176,7 @@ const DashboardPage = () => {
           <button
             className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100"
             onClick={() => setPage(page + 1)}
+            disabled={mails?.length < 5}
           >
             Next
           </button>

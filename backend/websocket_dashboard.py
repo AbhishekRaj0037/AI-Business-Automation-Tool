@@ -67,6 +67,11 @@ async def clear_all_fetch_status():
 
 async def set_task_status(user_id: str, status: str):
     await r.set(f"fetching:{user_id}", status)
+    await r.publish(
+        f"userId:{user_id}:updates",
+        json.dumps({"userId": user_id})
+    )
 
 async def get_task_status(user_id: str) -> str | None:
     return await r.get(f"fetching:{user_id}")
+

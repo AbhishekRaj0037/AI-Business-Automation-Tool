@@ -195,7 +195,7 @@ const DashboardPage = () => {
               <button
                 className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100"
                 onClick={() => setPage(page + 1)}
-                disabled={email.attachment_result?.length === 0}
+                disabled={email.attachment_result?.length < 4}
               >
                 Next
               </button>

@@ -29,9 +29,15 @@ const DashboardPage = () => {
   );
   const [isFetching, setIsFetching] = useState(false);
   useEffect(() => {
-    if (gmailStatus == "connected") {
-      toast.success("Gmail connected successfully!");
+    if (gmailStatus === "connected") {
+      alert("Gmail connected successfully!");
+      // toast.success("Gmail connected successfully!", {
+      //   duration: 5000,
+      //   position: "top-right",
+      // });
     }
+  }, [gmailStatus]);
+  useEffect(() => {
     let ws: WebSocket;
     let reconnectTimeout: NodeJS.Timeout;
     let reconnectAttempts = 0;
@@ -88,7 +94,7 @@ const DashboardPage = () => {
       clearTimeout(reconnectTimeout);
       ws.close();
     };
-  }, [gmailStatus]);
+  }, []);
 
   const handleToggle = async () => {
     if (!isFetching) {

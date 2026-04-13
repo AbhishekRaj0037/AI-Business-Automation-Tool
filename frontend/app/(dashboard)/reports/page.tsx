@@ -28,17 +28,6 @@ const DashboardPage = () => {
   const [reports, setReportData] = useState<any[]>([]);
   const [page, setPage] = useState(1);
   const [selectedFile, setSelectedFile] = useState(null);
-  const handleViewFile = async (reportId: any) => {
-    try {
-      const response = await fetch(
-        `/get-ai-reports-by-id?report_id=${reportId}`,
-      );
-      const data = await response.json();
-      setSelectedFile(data.url);
-    } catch (error) {
-      console.error("Failed to fetch signed URL:", error);
-    }
-  };
   useEffect(() => {
     async function fetchData() {
       const mails_Data = await getReports(page, router);
@@ -54,12 +43,12 @@ const DashboardPage = () => {
         <div className="border text-black border-gray-300 h-20 rounded-md">
           <span className="text-2xl pl-4">Reports</span>
 
-          <span className="pl-120">
+          <span className="pl-125">
             <input
               type="text"
               id="search"
               placeholder="Search reports..."
-              className="border border-black rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+              className="border border-black rounded-lg px-4 py-2 mt-5 focus:outline-none focus:ring-2 focus:ring-black"
             />
             <Link
               href="/update-dashboard"
@@ -150,6 +139,7 @@ const DashboardPage = () => {
           <button
             className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100"
             onClick={() => setPage(page + 1)}
+            disabled={reports?.length < 5}
           >
             Next
           </button>

@@ -40,6 +40,8 @@ import boto3
 import jwt
 import os
 
+from jwt.exceptions import ExpiredSignatureError
+
 from langchain_classic.text_splitter import RecursiveCharacterTextSplitter
 import langchain_community.document_loaders as docloader
 from langchain_openai import OpenAIEmbeddings
@@ -118,7 +120,7 @@ async def rate_limit_handler(request, exc):
     )
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request,call_next):
         if request.url.path in EXCLUDED_PATHS:
             return await call_next(request)
         jwt_token = request.cookies.get("jwt_token")
@@ -138,6 +140,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
             request.state.userId = userId
             request.state.username=username
+        except ExpiredSignatureError:
+            payload = jwt.decode(
+            jwt_token,
+            JWT_SECRET_KEY,
+            algorithms=ALGORITHM,
+            options={"verify_exp": False}
+            )
+            user_id = payload.get("user_id")
+            async with Session() as session:
+                await session.execute(
+                delete(model.Token).where(model.Token.user_id == user_id)
+                )
+                await session.commit()
+            response = JSONResponse(
+                status_code=401,
+                content={"detail": "Token expired"}
+            )
+            response.delete_cookie("jwt_token")
+            return response
         except Exception as err:
             print("Error authenticating user: ",err)
             return JSONResponse(
@@ -145,10 +166,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Invalid token"}
             )
 
-       
         response = await call_next(request)
-        
         return response
+    
+
 app.add_middleware(AuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -207,21 +228,22 @@ scheduler=AsyncIOScheduler(jobstores=jobstores,executors=executors,job_defaults=
 async def get_imap_connection(userId: str, session):
     result = await session.execute(select(model.User).where(model.User.id == userId))
     user = result.scalars().first()
-
+    if user.email is None:
+        return None
+    
     if user.token_expiry and user.token_expiry < datetime.utcnow():
         credentials = Credentials(
             token=user.access_token,
             refresh_token=user.refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
-            client_id="YOUR_CLIENT_ID",
-            client_secret="YOUR_CLIENT_SECRET"
+            client_id=os.getenv("client_id"),
+            client_secret=os.getenv("client_secret")
         )
         credentials.refresh(google.auth.transport.requests.Request())
 
         user.access_token = credentials.token
         user.token_expiry = credentials.expiry
         await session.commit()
-
     imap = imaplib.IMAP4_SSL("imap.gmail.com")
     auth_string = f"user={user.email}\x01auth=Bearer {user.access_token}\x01\x01"
     imap.authenticate("XOAUTH2", lambda x: auth_string.encode())
@@ -312,7 +334,6 @@ def get_email_body(msg: Message) -> str:
 
 @app.get("/")
 async def read_root(request:Request,session: SessionDep):
-    await websocket_dashboard.set_task_status(request.state.userId,"true")
     await process_dashboard(request.state.userId,request.state.username,session)
 
 @app.get("/stop-fetching")
@@ -327,14 +348,18 @@ async def fetch_status(request:Request,session: SessionDep):
 
 async def process_dashboard(userId,username,session):
     print("Welcome ",username)
-    result=await session.execute(select(model.email_metadata).order_by(desc(model.email_metadata.imap_uid)).limit(1))
+    await websocket_dashboard.set_task_status(userId,"true")
+    result=await session.execute(select(model.email_metadata).where(model.email_metadata.user_id==userId).order_by(desc(model.email_metadata.imap_uid)).limit(1))
     result=result.scalars().first()
     starting_uid_range=0
     if result is not None:
          starting_uid_range=result.imap_uid
     mail= await get_imap_connection(userId,session)
-    mail.select("inbox")
-    uids=mail.uid('search', None, f'UID {starting_uid_range + 1}:*')
+    if mail is None:
+        await websocket_dashboard.set_task_status(userId,"false")
+        return 
+    await asyncio.to_thread(mail.select, "inbox")
+    uids = await asyncio.to_thread(mail.uid, 'search', None, f'UID {starting_uid_range + 1}:*')
     uid_list=uids[1][0].split()
     for uid in uid_list:
         status=await websocket_dashboard.get_task_status(userId)
@@ -342,7 +367,7 @@ async def process_dashboard(userId,username,session):
             print(f"Stopped fetching for {username}")
             break
         print(f"Fetching emails for {username}...")
-        mail_data=mail.fetch(uid,'RFC822')
+        mail_data=await asyncio.to_thread(mail.fetch,uid,'RFC822')
         raw=mail_data[1][0][1]
         raw_message=email.message_from_bytes(raw)
         mail_from=raw_message["from"]
@@ -352,11 +377,12 @@ async def process_dashboard(userId,username,session):
         formatted_body = get_clean_body(body)
         aware = parsedate_to_datetime(received_at)
         received_at = aware.astimezone(timezone.utc).replace(tzinfo=None)
-        is_uid_already_synced=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(uid)))
+        is_uid_already_synced=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(uid) and model.email_metadata.user_id==userId))
         is_uid_already_synced=is_uid_already_synced.scalars().first()
         if is_uid_already_synced is None:
             report_data=None
             stmt = insert(model.email_metadata).values(
+                user_id=userId,
                 imap_uid=int(uid),
                 mail_from=mail_from,
                 subject=subject,
@@ -377,11 +403,16 @@ async def process_dashboard(userId,username,session):
                         ext=Path(filename).suffix
                         unique_id=uuid.uuid4().hex
                         s3_key=f"uploads/{userId}/{unique_id}{ext}"
-                        s3.put_object(Bucket="amzn-s3-bucket-ai-business-automation-assistant",Key=f"{s3_key}",Body=file_bytes)
+                        await asyncio.to_thread(
+                        s3.put_object,
+                        Bucket="amzn-s3-bucket-ai-business-automation-assistant",
+                        Key=f"{s3_key}",
+                        Body=file_bytes
+                        )
                         print("File uploaded succesfully on aws bucket")
                         file_data=None
                         content_type = part.get_content_type()
-                        file_data=model.email_attachments_metadata(imap_uid=int(uid),file_name=filename,file_type=content_type,file_size=len(file_bytes),status=StatusEnum.incomplete,checksum_sha256="!231231231231!",s3_key=s3_key)
+                        file_data=model.email_attachments_metadata(user_id=userId,imap_uid=int(uid),file_name=filename,file_type=content_type,file_size=len(file_bytes),status=StatusEnum.incomplete,checksum_sha256="!231231231231!",s3_key=s3_key)
                         session.add(file_data)
                         await session.commit()
                     except Exception as e:
@@ -390,87 +421,43 @@ async def process_dashboard(userId,username,session):
                 "fetch_today":1
             })
             print("Added to DB")
+    await websocket_dashboard.set_task_status(userId,"false")
+    mail.close()
+    return
 
 
 @app.get("/get-all-reports")
 async def get_all_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(5)):
     print("Welcome ",request.state.username)
     offset=(page-1)*limit
-    result=await session.execute(select(model.email_metadata).offset(offset).order_by(desc(model.email_metadata.imap_uid)).limit(limit))
+    result=await session.execute(select(model.email_metadata).where(model.email_metadata.user_id==request.state.userId).offset(offset).order_by(desc(model.email_metadata.imap_uid)).limit(limit))
     result=result.scalars().all()
     return result
    
 @app.get("/get-reports-by-id")
-async def get_all_reports(session: SessionDep,request:Request,imap_uid:int=Query(1),page:int=Query(1),limit:int=Query(4)):
+async def get_report_by_id(session: SessionDep,request:Request,imap_uid:int=Query(1),page:int=Query(1),limit:int=Query(4)):
     print("Welcome ",request.state.username)
-    mail_result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
+    mail_result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid) and model.email_metadata.user_id==request.state.userId))
     mail_result=mail_result.scalars().first()
     offset=(page-1)*limit
-    attachment_result=await session.execute(select(model.email_attachments_metadata).offset(offset).where(model.email_attachments_metadata.imap_uid==int(imap_uid)).limit(limit))
+    attachment_result=await session.execute(select(model.email_attachments_metadata).offset(offset).where(model.email_attachments_metadata.imap_uid==int(imap_uid) and model.email_attachments_metadata.user_id==request.state.userId).limit(limit))
     attachment_result=attachment_result.scalars().all()
     list_of_file_url=[]
     for result in attachment_result:
-        url = s3.generate_presigned_url(
+        url = await asyncio.to_thread(
+        s3.generate_presigned_url,
         ClientMethod='get_object',
         Params={
-            'Bucket': "amzn-s3-bucket-ai-business-automation-assistant",
-            'Key': result.s3_key,
-            'ResponseContentDisposition': 'inline',
-            'ResponseContentType': result.file_type
-        },
-        ExpiresIn=300
+        'Bucket': "amzn-s3-bucket-ai-business-automation-assistant",
+        'Key': result.s3_key,
+        'ResponseContentDisposition': 'inline',
+        'ResponseContentType': result.file_type
+    },
+    ExpiresIn=300
     )
         list_of_file_url.append(url)
     result={"mail_result":mail_result,"attachment_result":attachment_result,"list_of_file_presigned_url":list_of_file_url}
     return result
-
-
-@app.post("/fetch-mail-data")
-async def get_mail(
-    session: SessionDep,
-    imap_uid:str,
-    request:Request,
-):  
-    print("Welcome ",request.state.username)
-    mail_data=mail.fetch(imap_uid,'RFC822')
-    raw=mail_data[1][0][1]
-    raw_message=email.message_from_bytes(raw)
-    mail_from=raw_message["from"]
-    subject=raw_message["Subject"]
-    received_at=raw_message["Date"]
-    aware = parsedate_to_datetime(received_at)
-    received_at = aware.astimezone(timezone.utc).replace(tzinfo=None)
-    is_uid_already_present=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
-    is_uid_already_present=is_uid_already_present.scalars().first()
-    if is_uid_already_present:
-        print("Triggered:      ",is_uid_already_present)
-        return
-    for part in raw_message.walk():
-        if part.get_content_maintype() == 'multipart' or part.get('Content-Disposition') is None:
-            continue
-        filename=part.get_filename()
-        if filename:
-            checksum = checksum_from_part(part)
-            is_uid_already_present=await session.execute(select(model.email_attachments_metadata).join(model.email_metadata,model.email_attachments_metadata.imap_uid==model.email_metadata.id).where(model.email_metadata.imap_uid==int(imap_uid) and model.email_attachments_metadata.checksum_sha256==checksum))
-            is_uid_already_present=is_uid_already_present.scalars().all()
-            if is_uid_already_present == []:
-                result=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid))) 
-                result=result.scalars().one()
-                mail_data=model.email_attachments_metadata(email_id=result.id,file_name=filename,file_size=len(part.get_payload(decode=True)),cloudinary_reportUrl="cloudinary_URL",status=StatusEnum.pending,checksum_sha256=checksum)
-                session.add(mail_data)
-                await session.commit()
-                print("Added to DB")
-    result=update(model.email_metadata).where(model.email_metadata.imap_uid == int(imap_uid)).values(status=StatusEnum.completed)
-    await session.execute(result)
-    await session.commit()
-
-
-    is_uid_already_present=await session.execute(select(model.email_metadata).where(model.email_metadata.imap_uid==int(imap_uid)))
-    is_uid_already_present=is_uid_already_present.scalars().first()
-    if is_uid_already_present.status==StatusEnum.completed:
-        print("Triggered:      ",is_uid_already_present)
-        return
-    return
 
 
 @app.post("/create-user")
@@ -506,7 +493,7 @@ async def login_user(session: SessionDep,request:Request,response:Response):
         print("Password Incorrect")
         raise HTTPException(status_code=401,detail="Password Incorrect")
     
-    access_token_expires=datetime.now(timezone.utc)+timedelta(minutes=30)
+    access_token_expires=datetime.now(timezone.utc)+timedelta(minutes=1)
     user={"user_id":result.id,"username":result.username}
     user.update({"exp":access_token_expires})
     encode_jwt_token=jwt.encode(user,JWT_SECRET_KEY,algorithm=ALGORITHM)
@@ -529,7 +516,7 @@ async def login_user(session: SessionDep,request:Request,response:Response):
     )
     print("Added to DB")
     print("Login successfully")
-    return {"Toke": encode_jwt_token,"Type":"Bearer","message":"Login Successful"}
+    return {"Token": encode_jwt_token,"Type":"Bearer","message":"Login Successful"}
 
 
 @app.post("/change-password")
@@ -589,12 +576,13 @@ async def update_file(session: SessionDep,request: Request,file:UploadFile=File(
     try:
         file_bytes = await file.read()
         file_stream = BytesIO(file_bytes)
-        result = cloudinary.uploader.upload(
-            file_stream,
-            asset_folder="AI Business Automation Assistant",
-            public_id=uuid.uuid4().hex,
-            overwrite=True,
-            resource_type="auto"
+        result = await asyncio.to_thread(
+        cloudinary.uploader.upload,
+        file_stream,
+        asset_folder="AI Business Automation Assistant",
+        public_id=uuid.uuid4().hex,
+        overwrite=True,
+        resource_type="auto"
         )
         url = result["url"]
         result=update(model.User).where(model.User.id == request.state.userId).values(profile_photo=url)
@@ -633,63 +621,37 @@ async def gmail_callback(code:str,state:str,session:SessionDep,request:Request):
         redirect_uri="http://localhost:8000/api/auth/gmail/callback"
     )
     flow.code_verifier = code_verifier
-    flow.fetch_token(code=code)
+    await asyncio.to_thread(flow.fetch_token,code=code)
     credentials=flow.credentials
-    service = build("gmail", "v1", credentials=credentials)
-    profile = service.users().getProfile(userId="me").execute()
+    service = await asyncio.to_thread(build,"gmail", "v1", credentials=credentials)
+    profile = await asyncio.to_thread(service.users().getProfile(userId="me").execute)
     user=update(model.User).where(model.User.id==request.state.userId).values(email=profile["emailAddress"],refresh_token=credentials.refresh_token,access_token=credentials.token,token_expiry=credentials.expiry)
     await session.execute(user)
     await session.commit()
     background_tasks = BackgroundTasks()
     background_tasks.add_task(
         process_dashboard,
-        user_id=request.state.userId,
-        access_token=credentials.token
+        userId=request.state.userId,
+        username=request.state.username,
+        session=session
+
     )
+    await websocket_dashboard.set_task_status(request.state.userId,"true")
     return RedirectResponse(
         url="http://localhost:3000/home?gmail=connected",
         status_code=302,
-        background=background_tasks  # runs after redirect is sent
+        background=background_tasks
     )
 
-
-
-@app.post("/update-report-status")
-async def update_report_status(session: SessionDep,request:Request):
-    print("Welcome ",request.state.username)
-    body=await request.json()
-    report_id=body["report_id"]
-    report_status=StatusEnum[body["report_status"]]
-    report=update(model.email_attachments_metadata).where(model.email_attachments_metadata.id==int(report_id)).values(status=report_status)
-    await session.execute(report)
-    await session.commit()
-    return
 
 @app.get("/get-all-ai-reports")
 async def get_all_ai_reports(session: SessionDep,request:Request,page:int=Query(1),limit:int=Query(5)):
     print("Welcome ",request.state.username)
     offset=(page-1)*limit
-    result=await session.execute(select(model.reports).offset(offset).order_by(desc(model.reports.id)).limit(limit))
+    result=await session.execute(select(model.reports).where(model.reports.user_id==request.state.userId).offset(offset).order_by(desc(model.reports.id)).limit(limit))
     result=result.scalars().all()
     return result
 
-@app.get("/get-ai-reports-by-id")
-async def get_all_ai_reports(session: SessionDep,request:Request,report_id:str):
-    print("Welcome ",request.state.username)
-    report_result=await session.execute(select(model.reports).where(model.reports.id==int(report_id)))
-    report_result=report_result.scalars().first()
-    url = s3.generate_presigned_url(
-    ClientMethod='get_object',
-    Params={
-        'Bucket': "amzn-s3-bucket-ai-business-automation-assistant",
-        'Key': report_result.report_name,
-        'ResponseContentDisposition': 'inline',
-        'ResponseContentType': report_result.report_type
-    },
-    ExpiresIn=300
-)
-    result={"report_url":url}
-    return result
 
 @app.post("/analyse-report")
 async def analyse_report(session: SessionDep,request:Request):
@@ -698,7 +660,7 @@ async def analyse_report(session: SessionDep,request:Request):
     file_name=body["file_name"]
     s3_key=body["s3_key"]
     report_id=body["report_id"]
-    report_result=await session.execute(select(model.email_attachments_metadata).where(model.email_attachments_metadata.id==int(report_id)))
+    report_result=await session.execute(select(model.email_attachments_metadata).where(model.email_attachments_metadata.id==int(report_id) and model.email_attachments_metadata.user_id==request.state.userId))
     report_result=report_result.scalars().first()
     if report_result.status==StatusEnum.completed:
         return {"status":"Report already analysed"}
@@ -706,15 +668,13 @@ async def analyse_report(session: SessionDep,request:Request):
         await update_user_dashboard(request.state.userId,queue_changes={
                     "pending":1,
                 })
-        response=s3.get_object(
-            Bucket="amzn-s3-bucket-ai-business-automation-assistant",
-            Key=s3_key
-        )
-        file_bytes=response["Body"].read()
-        loaded_docs=parse_files.parse_file(file_bytes,file_name,s3_key)
-        doc_chunks=splitter.split_documents(loaded_docs)
-        vectorstore.add_documents(doc_chunks)
-        result=update(model.email_attachments_metadata).where(model.email_attachments_metadata.id == report_id).values(status=StatusEnum.completed)
+        response=await asyncio.to_thread(s3.get_object,Bucket="amzn-s3-bucket-ai-business-automation-assistant",
+            Key=s3_key)
+        file_bytes = await asyncio.to_thread(response["Body"].read)
+        loaded_docs=await asyncio.to_thread(parse_files.parse_file,file_bytes,file_name,s3_key)
+        doc_chunks=await asyncio.to_thread(splitter.split_documents,loaded_docs)
+        await asyncio.to_thread(vectorstore.add_documents,doc_chunks)
+        result=update(model.email_attachments_metadata).where(model.email_attachments_metadata.id == report_id and model.email_attachments_metadata.user_id==request.state.userId).values(status=StatusEnum.completed)
         await session.execute(result)
         await session.commit()
         await update_user_dashboard(request.state.userId,queue_changes={
@@ -737,11 +697,12 @@ async def search_document(session: SessionDep,request:Request):
     body=await request.json()
     query=body["query"]
     try:
-        retriever=vectorstore.as_retriever(
-            search_type="similarity",
-            search_kwargs={"k":10}
+        retriever = await asyncio.to_thread(
+        vectorstore.as_retriever,
+        search_type="similarity",
+        search_kwargs={"k": 10}
         )
-        retrieved_docs=retriever.invoke(query)
+        retrieved_docs = await asyncio.to_thread(retriever.invoke, query)
         context_parts = []
         source_map = {}
         for i, doc in enumerate(retrieved_docs):
@@ -988,6 +949,32 @@ async def search_document(session: SessionDep,request:Request):
     await session.commit()
     print("Successful time update")
 
+async def process_single_schedule(schedule):
+    async with Session() as session:
+        result = await session.execute(
+            select(model.User).where(model.User.id == schedule.user_id)
+        )
+        user = result.scalars().one()
+        
+        await process_dashboard(user.id, user.username, session)
+        
+        freq_hours = {
+            ScheduleEnum.everyday: 24,
+            ScheduleEnum.weekly: 168,
+            ScheduleEnum.every_twelve_hours: 12,
+            ScheduleEnum.every_six_hours: 6,
+        }
+        next_run_at = schedule.next_run_at + timedelta(
+            hours=freq_hours[schedule.schedule_frequency]
+        )
+        
+        await session.execute(
+            update(model.dashboard_schedules)
+            .where(model.dashboard_schedules.id == schedule.id and model.dashboard_schedules.user_id==user.id)
+            .values(last_run_at=schedule.next_run_at, next_run_at=next_run_at)
+        )
+        await session.commit()
+
 async def run_scheduled_jobs():
     async with Session() as session:
         now = datetime.now()
@@ -1001,27 +988,10 @@ async def run_scheduled_jobs():
 
         schedules = result.scalars().all()
 
-        for schedule in schedules:
-            user_id=schedule.user_id
-            result=await session.execute(select(model.User).where(model.User.id==user_id)) 
-            result=result.scalars().one()
-            username=result.username
-            await websocket_dashboard.set_task_status(result.id,"true")
-            await process_dashboard(result.id,username,session)
-            await websocket_dashboard.set_task_status(result.id,"false")
-            next_run_at=schedule.next_run_at
-            if schedule.schedule_frequency==ScheduleEnum.everyday:
-                next_run_at=next_run_at+timedelta(hours=24)
-            if schedule.schedule_frequency==ScheduleEnum.weekly:
-                next_run_at=next_run_at+timedelta(hours=168)
-            if schedule.schedule_frequency==ScheduleEnum.every_twelve_hours:
-                next_run_at=next_run_at+timedelta(hours=12)
-            if schedule.schedule_frequency==ScheduleEnum.every_six_hours:
-                next_run_at=next_run_at+timedelta(hours=6)  
-            next_run=update(model.dashboard_schedules).where(model.dashboard_schedules.id==schedule.id).values(last_run_at=schedule.next_run_at,next_run_at=next_run_at)
-            await session.execute(next_run)
-            await session.commit()
-
+    await asyncio.gather(
+        *[process_single_schedule(s) for s in schedules],
+        return_exceptions=True
+    )
 
 
 try:
