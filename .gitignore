@@ -1,2 +1,2 @@
-.env
 backend/client_secret.json
+backend/app/.env
