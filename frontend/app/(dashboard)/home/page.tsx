@@ -161,26 +161,6 @@ const DashboardPage = () => {
           </span>
         </div>
       </div>
-      <div className="flex text-black pl-12 gap-5">
-        <div className="border w-97 rounded-md">
-          <div className="text-gray-500 border text-center">Recent Reports</div>
-          <div className="text-sm text-gray-500">Today 1:00 PM</div>
-          <div>Daily Email Summary</div>
-          <div className="text-gray-500">
-            Fetched 356 emails, analysed 267 by AI
-          </div>
-        </div>
-        <div className="border w-97 rounded-md">
-          <div className="text-gray-500 border text-center">
-            Upcoming Schedule
-          </div>
-          <div className="text-sm text-gray-500">Today 06:00 PM</div>
-          <div>Generate daily email summary</div>
-          <div className="text-gray-500">
-            Fetched 356 emails, analysed 267 by AI
-          </div>
-        </div>
-      </div>
       <p className="text-black pl-12 pt-2">
         • Al analysis runs continuously. Most emails are processed within 2-5
         minutes.

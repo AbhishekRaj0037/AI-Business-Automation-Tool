@@ -9,8 +9,9 @@ import ImageExtension from "@tiptap/extension-image";
 import Underline from "@tiptap/extension-underline";
 import Placeholder from "@tiptap/extension-placeholder";
 import { useState } from "react";
+import Heading from "@tiptap/extension-heading";
+import Paragraph from "@tiptap/extension-paragraph";
 
-// Toolbar button component
 function ToolbarButton({
   onClick,
   isActive = false,
@@ -34,6 +35,46 @@ function ToolbarButton({
   );
 }
 
+// Extend Paragraph to accept sources
+const CustomParagraph = Paragraph.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      sources: {
+        default: [],
+        parseHTML: (element) => {
+          const raw = element.getAttribute("data-sources");
+          return raw ? JSON.parse(raw) : [];
+        },
+        renderHTML: (attributes) => {
+          if (!attributes.sources?.length) return {};
+          return { "data-sources": JSON.stringify(attributes.sources) };
+        },
+      },
+    };
+  },
+});
+
+// Extend Heading to accept sources
+const CustomHeading = Heading.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      sources: {
+        default: [],
+        parseHTML: (element) => {
+          const raw = element.getAttribute("data-sources");
+          return raw ? JSON.parse(raw) : [];
+        },
+        renderHTML: (attributes) => {
+          if (!attributes.sources?.length) return {};
+          return { "data-sources": JSON.stringify(attributes.sources) };
+        },
+      },
+    };
+  },
+});
+
 export default function TiptapEditor({
   content,
   onSave,
@@ -51,7 +92,12 @@ export default function TiptapEditor({
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        heading: false, // disable default heading
+        paragraph: false, // disable default paragraph
+      }),
+      CustomParagraph,
+      CustomHeading,
       Underline,
       Table.configure({ resizable: true }),
       TableRow,
@@ -62,7 +108,6 @@ export default function TiptapEditor({
     ],
     content: content,
     onSelectionUpdate: ({ editor }) => {
-      // Show sources for the selected node
       const { $from } = editor.state.selection;
       const node = $from.parent;
       const sources = node.attrs?.sources || [];
