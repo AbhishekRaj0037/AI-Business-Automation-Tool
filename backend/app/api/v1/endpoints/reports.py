@@ -1,4 +1,5 @@
 from fastapi import APIRouter,Depends,Request,HTTPException,Query,HTTPException,Depends,Request
+from fastapi.responses import StreamingResponse
 from app.db.models import email,report as reportModel
 from sqlalchemy import select,update,desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from datetime import datetime
 from app.db import enums
 import asyncio
 import json
+import io
 
 
 router=APIRouter()
@@ -264,3 +266,50 @@ async def update_report(report_id: int, request: Request,session:AsyncSession= D
 
     return {"status": "saved", "report_id": report.id}
 
+
+@router.post("/get-attachment-by-s3-key")
+async def get_attachment_by_s3_key(request:Request,session:AsyncSession= Depends(get_session)):
+    print("Welcome ",request.state.username)
+    body=await request.json()
+    s3_key=body["s3_key"]
+    file_type=body["file_type"]
+    url = await asyncio.to_thread(
+        s3.generate_presigned_url,
+        ClientMethod='get_object',
+        Params={
+        'Bucket': "amzn-s3-bucket-ai-business-automation-assistant",
+        'Key': s3_key,
+        'ResponseContentDisposition': 'inline',
+        'ResponseContentType': file_type
+    },
+    ExpiresIn=300
+    )
+    return url
+
+
+
+
+
+@router.post("/export-report-pdf")
+async def export_report_pdf(request:Request,session:AsyncSession= Depends(get_session)):
+    print("Welcome ",request.state.username)
+    body=await request.json()
+    report_id=body["report_id"]
+    result = await session.execute(
+        select(reportModel.reports).where(
+            reportModel.reports.id == report_id,
+            reportModel.reports.user_id == request.state.userId
+        )
+    )
+    report = result.scalars().first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="report_{report_id}.pdf"'
+        },
+    )
