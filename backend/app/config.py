@@ -1,3 +1,4 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -20,7 +21,7 @@ class Settings(BaseSettings):
     client_secret:str
     Redis_DB:str
 
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": Path(__file__).parent / ".env"}
 
 
 
