@@ -17,9 +17,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
-buffer = io.BytesIO()
-doc = SimpleDocTemplate(buffer, pagesize=letter)
-styles = getSampleStyleSheet()
+
 
 
 router=APIRouter()
@@ -35,10 +33,10 @@ async def get_all_reports(request:Request,page:int=Query(1),limit:int=Query(5),s
 @router.get("/get-reports-by-id")
 async def get_report_by_id(request:Request,imap_uid:int=Query(1),page:int=Query(1),limit:int=Query(4),session:AsyncSession= Depends(get_session)):
     print("Welcome ",request.state.username)
-    mail_result=await session.execute(select(email.email_metadata).where(email.email_metadata.imap_uid==int(imap_uid) , email.email_metadata.user_id==request.state.userId))
+    mail_result=await session.execute(select(email.email_metadata).where(email.email_metadata.imap_uid==int(imap_uid) & email.email_metadata.user_id==request.state.userId))
     mail_result=mail_result.scalars().first()
     offset=(page-1)*limit
-    attachment_result=await session.execute(select(email.email_attachments_metadata).offset(offset).where(email.email_attachments_metadata.imap_uid==int(imap_uid) , email.email_attachments_metadata.user_id==request.state.userId).limit(limit))
+    attachment_result=await session.execute(select(email.email_attachments_metadata).offset(offset).where(email.email_attachments_metadata.imap_uid==int(imap_uid) & email.email_attachments_metadata.user_id==request.state.userId).limit(limit))
     attachment_result=attachment_result.scalars().all()
     list_of_file_url=[]
     for result in attachment_result:
@@ -79,7 +77,7 @@ async def analyse_report(request:Request,session:AsyncSession= Depends(get_sessi
     file_name=body["file_name"]
     s3_key=body["s3_key"]
     report_id=body["report_id"]
-    report_result=await session.execute(select(email.email_attachments_metadata).where(email.email_attachments_metadata.id==int(report_id) , email.email_attachments_metadata.user_id==request.state.userId))
+    report_result=await session.execute(select(email.email_attachments_metadata).where(email.email_attachments_metadata.id==int(report_id) & email.email_attachments_metadata.user_id==request.state.userId))
     report_result=report_result.scalars().first()
     if report_result.status==enums.StatusEnum.completed:
         return {"status":"Report already analysed"}
@@ -93,7 +91,7 @@ async def analyse_report(request:Request,session:AsyncSession= Depends(get_sessi
         loaded_docs=await asyncio.to_thread(parse_file,file_bytes,file_name,s3_key)
         doc_chunks=await asyncio.to_thread(splitter.split_documents,loaded_docs)
         await asyncio.to_thread(vectorstore.add_documents,doc_chunks)
-        result=update(email.email_attachments_metadata).where(email.email_attachments_metadata.id == report_id , email.email_attachments_metadata.user_id==request.state.userId).values(status=enums.StatusEnum.completed)
+        result=update(email.email_attachments_metadata).where(email.email_attachments_metadata.id == report_id & email.email_attachments_metadata.user_id==request.state.userId).values(status=enums.StatusEnum.completed)
         await session.execute(result)
         await session.commit()
         await wbsckdashboard.update_user_dashboard(request.state.userId,queue_changes={
@@ -302,6 +300,9 @@ async def export_report_pdf(request:Request,session:AsyncSession= Depends(get_se
     print("Welcome ",request.state.username)
     body=await request.json()
     report_id=body["report_id"]
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
     result = await session.execute(
         select(reportModel.reports).where(
             reportModel.reports.id == report_id,
@@ -318,7 +319,6 @@ async def export_report_pdf(request:Request,session:AsyncSession= Depends(get_se
 ]
     doc.build(story)
     pdf_bytes = buffer.getvalue()
-    buffer.close()
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),

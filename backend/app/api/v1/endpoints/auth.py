@@ -23,7 +23,7 @@ async def create_user(request: Request,session:AsyncSession= Depends(get_session
     result=result.scalars().all()
     if result != []:
         print("User already exsist")
-        return
+        return HTTPException(status_code=409,detail="User already exsist")
     hashed_password= password_hash.hash(body['password'])
     user=userModel.User(username=body['name'],password=hashed_password)
     session.add(user)

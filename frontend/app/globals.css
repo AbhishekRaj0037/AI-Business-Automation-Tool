@@ -49,12 +49,13 @@
 }
 
 .box {
-  border: 2px solid #d1d5db;
-  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
   padding: 16px;
-  margin: 16px;
-  margin-top: 20px;
-  margin-bottom: 150px;
+  margin: 12px;
+  margin-top: 16px;
+  margin-bottom: 120px;
+  background: #f9fafb;
 }
 
 .user {

@@ -1,8 +1,16 @@
 "use client";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import {
+  Eye,
+  Plus,
+  CheckCircle,
+  Clock,
+  Mail,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 
 type User = {
   email: string;
@@ -21,45 +29,54 @@ type User = {
 async function getMails(page: any, router: any) {
   const res = await fetch(
     `${process.env.NEXT_PUBLIC_API_BASE_URL}/get-all-reports?page=${page}&limit=5`,
-    {
-      cache: "no-store",
-      credentials: "include",
-    },
+    { cache: "no-store", credentials: "include" },
   );
-  if (res.status === 401) {
-    router.push("/login");
-  }
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch data");
-  }
-  const data = await res.json();
-  return data;
+  if (res.status === 401) router.push("/login");
+  if (!res.ok) throw new Error("Failed to fetch data");
+  return res.json();
 }
+
+const StatusBadge = ({ status }: { status: string }) => {
+  const s = (status || "").toLowerCase();
+  if (s === "completed" || s === "done") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
+        <CheckCircle size={10} />
+        Completed
+      </span>
+    );
+  }
+  if (s === "pending") {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
+        <Clock size={10} />
+        Pending
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+      {status}
+    </span>
+  );
+};
 
 const DashboardPage = () => {
   const router = useRouter();
-  const [data, setData] = useState(null);
   const [mails, setMailData] = useState<any[]>([]);
-  const [emails, setEmails] = useState([]);
   const [page, setPage] = useState(1);
   const [userDetail, setUserDetail] = useState<User | null>(null);
 
   async function handleAddGmail() {
     const res = await fetch(
       `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/gmail`,
-      {
-        cache: "no-store",
-        credentials: "include",
-      },
+      { cache: "no-store", credentials: "include" },
     );
     if (res.status === 401) {
       router.push("/login");
+      return;
     }
-
-    if (!res.ok) {
-      throw new Error("Failed to fetch data");
-    }
+    if (!res.ok) throw new Error("Failed to fetch data");
     const data = await res.json();
     router.push(data);
   }
@@ -68,11 +85,13 @@ const DashboardPage = () => {
     async function fetchData() {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE_URL}/user-details`,
-        {
-          cache: "no-store",
-          credentials: "include",
-        },
+        { cache: "no-store", credentials: "include" },
       );
+      if (res.status === 401) {
+        router.push("/login");
+        return;
+      }
+      if (!res.ok) throw new Error("Failed to fetch data");
       const res_data = await res.json();
       setUserDetail(res_data);
       const mails_Data = await getMails(page, router);
@@ -82,109 +101,134 @@ const DashboardPage = () => {
   }, [page]);
 
   return (
-    <div>
-      <div className="text-black text-3xl pt-12">Emails - Inbox</div>
-
-      <div className="flex justify-between items-center mb-2">
-        <div className="text-black text-l pt-4 whitespace-nowrap">
-          Real-time visibility into fetched emails and AI analysis status
+    <div className="p-8">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Email Inbox</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Real-time visibility into fetched emails and AI analysis status
+          </p>
         </div>
-        {userDetail !== null && userDetail.email === null && (
-          <button
-            className="bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700 transition mt-4"
-            onClick={handleAddGmail}
-          >
-            + Add Gmail Account
-          </button>
-        )}
-        {userDetail !== null && userDetail.email !== null && (
-          <div className="border-2 border-blue-600 bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg mt-4 text-center">
-            {userDetail.email}
-          </div>
-        )}
+        <div className="mt-1 flex-shrink-0">
+          {userDetail !== null && userDetail.email === null && (
+            <button
+              onClick={handleAddGmail}
+              className="inline-flex items-center gap-2 bg-indigo-600 text-white text-sm font-medium px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition shadow-sm shadow-indigo-200"
+            >
+              <Plus size={15} />
+              Add Gmail Account
+            </button>
+          )}
+          {userDetail !== null && userDetail.email !== null && (
+            <div className="inline-flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-700 text-sm font-medium px-4 py-2.5 rounded-xl">
+              <Mail size={14} />
+              {userDetail.email}
+            </div>
+          )}
+        </div>
       </div>
 
-      <table className="table-fixed break-words border border-gray-300 w-full text-center text-black">
-        <thead className="bg-gray-100">
-          <tr>
-            <th className="border px-4 py-2 w-30">Status</th>
-            <th className="border px-4 py-2 w-70">Subject</th>
-            <th className="border px-4 py-2">From</th>
-            <th className="border px-4 py-2">Received</th>
-            <th className="border px-4 py-2 w-20">View</th>
-          </tr>
-        </thead>
-        <tbody>
-          {mails.map((mail: any) => (
-            <tr className="border-t" key={mail.id}>
-              <td className="border px-4 py-2 text-green-600">{mail.status}</td>
-              <td className="border px-4 py-2">{mail.subject}</td>
-              <td className="border px-4 py-2">{mail.mail_from}</td>
-              <td className="border px-4 py-2">{mail.received_at}</td>
-              <th className="border px-4 py-2">
-                <div className="flex justify-center items-center h-full">
-                  <a
-                    href={`/email-ai-analysis/${mail.imap_uid}`}
-                    className="text-blue-600 hover:underline"
-                  >
-                    <svg
-                      width="20"
-                      height="25"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <circle
-                        cx="12"
-                        cy="12"
-                        r="3"
-                        stroke="currentColor"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </a>
-                </div>
+      {/* Table card */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <table className="w-full text-sm table-fixed">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50/70">
+              <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">
+                Status
+              </th>
+              <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Subject
+              </th>
+              <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-40">
+                From
+              </th>
+              <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-36">
+                Received
+              </th>
+              <th className="text-center px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-20">
+                View
               </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {mails.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="text-center py-16 text-gray-400">
+                  <Mail
+                    size={36}
+                    className="mx-auto mb-3 opacity-20 text-gray-400"
+                  />
+                  <p className="text-sm font-medium text-gray-400">
+                    No emails found
+                  </p>
+                  <p className="text-xs text-gray-300 mt-1">
+                    Connect your Gmail account to start fetching emails
+                  </p>
+                </td>
+              </tr>
+            ) : (
+              mails.map((mail: any) => (
+                <tr
+                  key={mail.id}
+                  className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors"
+                >
+                  <td className="px-5 py-4">
+                    <StatusBadge status={mail.status} />
+                  </td>
+                  <td className="px-5 py-4">
+                    <p className="font-medium text-gray-900 truncate">
+                      {mail.subject}
+                    </p>
+                  </td>
+                  <td className="px-5 py-4 text-gray-500 text-xs truncate">
+                    {mail.mail_from}
+                  </td>
+                  <td className="px-5 py-4 text-gray-400 text-xs whitespace-nowrap">
+                    {mail.received_at}
+                  </td>
+                  <td className="px-5 py-4 text-center">
+                    <Link
+                      href={`/email-ai-analysis/${mail.imap_uid}`}
+                      className="inline-flex items-center justify-center p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                    >
+                      <Eye size={15} />
+                    </Link>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
 
-      <div className="flex items-center justify-between px-6 py-4 border-t rounded-b-xl text-black">
-        {/* Left side */}
-        <span className="text-sm text-gray-600"></span>
-
-        {/* Right side Pagination */}
-        <div className="flex items-center gap-2">
-          <button
-            className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100 "
-            onClick={() => setPage(page - 1)}
-            disabled={page === 1}
-          >
-            Previous
-          </button>
-
-          <button
-            className="px-3 py-1 border rounded-md text-gray-600 hover:bg-gray-100"
-            onClick={() => setPage(page + 1)}
-            disabled={mails?.length < 5}
-          >
-            Next
-          </button>
+        {/* Pagination */}
+        <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100">
+          <p className="text-xs text-gray-400">Page {page}</p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => p - 1)}
+              disabled={page === 1}
+              className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span className="px-3 py-1 text-sm font-semibold text-gray-700 bg-gray-50 rounded-lg border border-gray-200">
+              {page}
+            </span>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={mails?.length < 5}
+              className="p-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
         </div>
       </div>
 
-      <p className="text-black pt-2">
-        • Al analysis runs continuously. Most emails are processed within 2-5
+      <p className="text-xs text-gray-400 mt-4 flex items-center gap-1.5">
+        <span className="inline-block w-1 h-1 rounded-full bg-gray-300 flex-shrink-0" />
+        AI analysis runs continuously. Most emails are processed within 2–5
         minutes.
       </p>
     </div>

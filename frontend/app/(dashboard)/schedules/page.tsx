@@ -1,24 +1,39 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Clock, Save, Loader2, Calendar } from "lucide-react";
 
-import Image from "next/image";
-import Link from "next/link";
+const FREQUENCY_OPTIONS = [
+  {
+    value: "everyday",
+    label: "Every Day",
+    desc: "Runs once daily at the set time",
+  },
+  {
+    value: "every_six_hours",
+    label: "Every 6 Hours",
+    desc: "Runs 4 times a day",
+  },
+  {
+    value: "every_twelve_hours",
+    label: "Every 12 Hours",
+    desc: "Runs twice a day",
+  },
+  { value: "weekly", label: "Weekly", desc: "Runs once a week" },
+];
 
 const DashboardPage = () => {
   const router = useRouter();
   const [buttonStatus, setButtonStatus] = useState(false);
+  const [hour, setHour] = useState("01");
+  const [minute, setMinute] = useState("00");
+  const [period, setPeriod] = useState("AM");
+  const [frequency, setFrequency] = useState("everyday");
+
   const handleSubmit = async (e: any) => {
     e.preventDefault();
-
-    const data = {
-      hour,
-      minute,
-      period,
-      frequency,
-    };
+    const data = { hour, minute, period, frequency };
     setButtonStatus(true);
-
     try {
       const [res] = await Promise.all([
         fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/schedule-jobs`, {
@@ -27,119 +42,129 @@ const DashboardPage = () => {
           credentials: "include",
           body: JSON.stringify(data),
         }),
-        new Promise((resolve) => setTimeout(resolve, 2000)), // minimum 2 sec delay
+        new Promise((resolve) => setTimeout(resolve, 2000)),
       ]);
-      if (res.status === 401) {
+      if ((res as Response).status === 401) {
         router.push("/login");
+        return;
       }
-
-      if (!res.ok) {
-        throw new Error("Failed to save schedule");
-      }
-
-      const result = await res.json();
-      console.log("Saved:", result);
+      if (!(res as Response).ok) throw new Error("Failed to save schedule");
       setButtonStatus(false);
       window.location.reload();
     } catch (err) {
       console.error("Error:", err);
+      setButtonStatus(false);
     }
   };
-  const [hour, setHour] = useState("01");
-  const [minute, setMinute] = useState("00");
-  const [period, setPeriod] = useState("AM");
-  const [frequency, setFrequency] = useState("everyday");
+
+  const selectClass =
+    "border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer min-w-[76px] shadow-sm";
+
   return (
-    <div>
-      <div className="text-black text-3xl pt-12">Schedules</div>
-      <div className="flex gap-4 pt-5 ">
-        <div className="text-black text-l pt-4 whitespace-nowrap mb-2">
-          Set automatic times for dashboard updates
+    <div className="p-8">
+      {/* Header */}
+      <div className="mb-6">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-sm shadow-amber-200">
+            <Calendar size={17} className="text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Schedules</h1>
         </div>
+        <p className="text-sm text-gray-500 mt-2 ml-12">
+          Set automatic times for dashboard updates
+        </p>
       </div>
 
-      <div className="mb-2">
-        <div className="border text-black border-gray-300 h-17 rounded-md pt-4 pl-4 text-xl">
-          Schedules
-        </div>
-        <div className="border text-black border-gray-300 h-15 rounded-md pt-4 pl-4 text-l">
-          Set automatic times for dashboard updates
-        </div>
-        <div className="border text-black border-gray-300 h-100 rounded-md pt-4 pl-4 text-xl">
-          <div className="w-full max-w-2xl mx-auto mt-10">
-            <h2 className="text-2xl font-semibold text-gray-800 mb-6 text-center">
-              Schedule Dashboard Updates
-            </h2>
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Schedule Time */}
-              <div>
-                <label className="block text-gray-700 font-medium mb-2">
-                  Schedule Time
-                </label>
-
-                <div className="flex gap-3">
-                  <select
-                    value={hour}
-                    onChange={(e) => setHour(e.target.value)}
-                  >
-                    {[...Array(12)].map((_, i) => (
-                      <option key={i}>{String(i + 1).padStart(2, "0")}</option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={minute}
-                    onChange={(e) => setMinute(e.target.value)}
-                  >
-                    {[...Array(60)].map((_, i) => (
-                      <option key={i}>{String(i).padStart(2, "0")}</option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={period}
-                    onChange={(e) => setPeriod(e.target.value)}
-                  >
-                    <option>AM</option>
-                    <option>PM</option>
-                  </select>
-                </div>
-
-                <p className="text-sm text-gray-500 mt-2">
-                  Time is in your local time zone
-                </p>
-              </div>
-
-              {/* Frequency */}
-              <div>
-                <label className="block text-gray-700 font-medium mb-2">
-                  Frequency
-                </label>
-
-                <select
-                  value={frequency}
-                  onChange={(e) => setFrequency(e.target.value)}
-                >
-                  <option value="everyday">Every day</option>
-                  <option value="every_six_hours">Every 6 hours</option>
-                  <option value="every_twelve_hours">Every 12 hours</option>
-                  <option value="weekly">Weekly</option>
-                </select>
-              </div>
-
-              {/* Save Button */}
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
-                >
-                  {buttonStatus ? "Scheduling please wait..." : "Save Schedule"}
-                </button>
-              </div>
-            </form>
+      {/* Form card */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <form onSubmit={handleSubmit} className="space-y-7">
+          {/* Schedule Time */}
+          <div>
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-3">
+              <Clock size={14} className="text-gray-400" />
+              Schedule Time
+            </label>
+            <div className="flex items-center gap-2">
+              <select
+                value={hour}
+                onChange={(e) => setHour(e.target.value)}
+                className={selectClass}
+              >
+                {[...Array(12)].map((_, i) => (
+                  <option key={i}>{String(i + 1).padStart(2, "0")}</option>
+                ))}
+              </select>
+              <span className="text-gray-300 font-bold text-xl select-none">
+                :
+              </span>
+              <select
+                value={minute}
+                onChange={(e) => setMinute(e.target.value)}
+                className={selectClass}
+              >
+                {[...Array(60)].map((_, i) => (
+                  <option key={i}>{String(i).padStart(2, "0")}</option>
+                ))}
+              </select>
+              <select
+                value={period}
+                onChange={(e) => setPeriod(e.target.value)}
+                className={selectClass}
+              >
+                <option>AM</option>
+                <option>PM</option>
+              </select>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              Time is in your local time zone
+            </p>
           </div>
-        </div>
+
+          {/* Frequency */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              Frequency
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {FREQUENCY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setFrequency(opt.value)}
+                  className={`text-left px-4 py-3 rounded-xl border transition-all duration-150 ${
+                    frequency === opt.value
+                      ? "border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm"
+                      : "border-gray-200 text-gray-600 hover:border-indigo-200 hover:bg-gray-50"
+                  }`}
+                >
+                  <p className="text-sm font-semibold">{opt.label}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <div className="flex justify-end pt-1">
+            <button
+              type="submit"
+              disabled={buttonStatus}
+              className="inline-flex items-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 transition shadow-sm shadow-indigo-200 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {buttonStatus ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <Save size={14} />
+                  Save Schedule
+                </>
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

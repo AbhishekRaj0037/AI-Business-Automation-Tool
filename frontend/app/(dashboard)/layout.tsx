@@ -1,6 +1,4 @@
 import Menubar from "@/components/Menubar";
-import Image from "next/image";
-import Link from "next/link";
 import { Toaster } from "sonner";
 
 export default function DashboardLayout({
@@ -9,11 +7,11 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-gray-50">
       <Menubar />
-      <main className="flex-1 flex justify-center item-center">
-        <div className="w-full max-w-4xl">{children}</div>
-        <Toaster richColors />
+      <main className="flex-1 overflow-auto">
+        <div className="w-full max-w-5xl mx-auto">{children}</div>
+        <Toaster richColors position="top-right" />
       </main>
     </div>
   );

@@ -7,8 +7,8 @@ from app.db.base import Base
 class email_metadata(Base):
     __tablename__="EmailData"
     id=Column(Integer,primary_key=True)
-    user_id=Column(String,ForeignKey("User.id"))
-    imap_uid=Column(Integer,unique=True,nullable=False)
+    user_id=Column(String,ForeignKey("User.id"),unique=True)
+    imap_uid=Column(Integer,nullable=False)
     subject=Column(String)
     body=Column(String)
     mail_from=Column(String,nullable=False)

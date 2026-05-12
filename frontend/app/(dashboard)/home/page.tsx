@@ -1,42 +1,64 @@
 "use client";
-import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { Mail, Brain, Clock, RefreshCw, Play, Square } from "lucide-react";
 
 type DashboardStats = {
   userId: number;
   data: {
-    queue: {
-      pending: number;
-    };
-    stats: {
-      fetch_today: number;
-      completed: number;
-      pending: number;
-    };
+    queue: { pending: number };
+    stats: { fetch_today: number; completed: number; pending: number };
   };
   button: string;
 };
+
+const StatCard = ({
+  icon: Icon,
+  label,
+  value,
+  sublabel,
+  gradient,
+  bgLight,
+}: {
+  icon: any;
+  label: string;
+  value: number | undefined;
+  sublabel?: string;
+  gradient: string;
+  bgLight: string;
+}) => (
+  <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow flex-1 min-w-[180px]">
+    <div
+      className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center mb-4 shadow-sm`}
+    >
+      <Icon size={21} className="text-white" />
+    </div>
+    <p className="text-3xl font-bold text-gray-900 tabular-nums">
+      {value ?? <span className="text-gray-300">—</span>}
+    </p>
+    <p className="text-sm font-medium text-gray-700 mt-1">{label}</p>
+    {sublabel && <p className="text-xs text-gray-400 mt-0.5">{sublabel}</p>}
+  </div>
+);
 
 const DashboardPage = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const gmailStatus = searchParams.get("gmail");
-  const [websocket_incoming_data, setStats] = useState<DashboardStats | null>(
-    null,
-  );
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isFetching, setIsFetching] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
+
   useEffect(() => {
     if (gmailStatus === "connected") {
-      alert("Gmail connected successfully!");
-      // toast.success("Gmail connected successfully!", {
-      //   duration: 5000,
-      //   position: "top-right",
-      // });
+      toast.success("Gmail connected successfully!", {
+        duration: 5000,
+        position: "top-right",
+      });
     }
   }, [gmailStatus]);
+
   useEffect(() => {
     let ws: WebSocket;
     let reconnectTimeout: NodeJS.Timeout;
@@ -47,52 +69,40 @@ const DashboardPage = () => {
       ws = new WebSocket(`ws://localhost:8000/ws/dashboard`);
 
       ws.onopen = () => {
-        console.log("WebSocket connected successfully");
-        reconnectAttempts = 0; // reset on successful connection
+        reconnectAttempts = 0;
+        setWsConnected(true);
       };
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        console.log("Received websocket data:", data);
         setStats(data);
-        if (data.button === "true") setIsFetching(true);
-        else setIsFetching(false);
+        setIsFetching(data.button === "true");
       };
 
-      ws.onerror = (err) => {
-        console.log("WebSocket error -> ", err);
+      ws.onerror = () => {
+        setWsConnected(false);
       };
 
       ws.onclose = (event) => {
-        console.log("WebSocket closed, code:", event.code);
-
-        // Don't reconnect if auth failed
+        setWsConnected(false);
         if (event.code === 1008) {
           router.push("/login");
           return;
         }
-
-        // Reconnect with exponential backoff
         if (reconnectAttempts < maxReconnectAttempts) {
           const delay = Math.min(1000 * 2 ** reconnectAttempts, 30000);
-          console.log(
-            `Reconnecting in ${delay / 1000}s (attempt ${reconnectAttempts + 1})`,
-          );
           reconnectTimeout = setTimeout(() => {
             reconnectAttempts++;
             connect();
           }, delay);
-        } else {
-          console.log("Max reconnect attempts reached");
         }
       };
     };
 
     connect();
-
     return () => {
       clearTimeout(reconnectTimeout);
-      ws.close();
+      ws?.close();
     };
   }, []);
 
@@ -111,58 +121,108 @@ const DashboardPage = () => {
       });
     }
   };
+
   return (
-    <div>
-      <div className="text-black text-3xl pl-12 pt-12">
-        Email Intelligence -Today
+    <div className="p-8">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-baseline gap-2 mb-1">
+          <h1 className="text-2xl font-bold text-gray-900">
+            Email Intelligence
+          </h1>
+          <span className="text-sm text-gray-400 font-normal">— Today</span>
+        </div>
+        <p className="text-sm text-gray-500">
+          Real-time visibility into inbox activity and AI workload
+        </p>
+        <div className="flex items-center gap-1.5 mt-2">
+          {wsConnected ? (
+            <>
+              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-xs text-green-600 font-medium">Live</span>
+            </>
+          ) : (
+            <>
+              <div className="w-2 h-2 rounded-full bg-gray-300" />
+              <span className="text-xs text-gray-400">Connecting…</span>
+            </>
+          )}
+        </div>
       </div>
-      <div className="text-black text-l pl-12 pt-4">
-        Real-time visibility into inbox activity and AI workload
+
+      {/* Stat cards */}
+      <div className="flex gap-4 mb-6 flex-wrap">
+        <StatCard
+          icon={Mail}
+          label="Emails Fetched Today"
+          value={stats?.data?.stats?.fetch_today}
+          gradient="from-blue-500 to-cyan-400"
+          bgLight="bg-blue-50"
+        />
+        <StatCard
+          icon={Brain}
+          label="AI Analysis Done"
+          value={stats?.data?.stats?.completed}
+          gradient="from-violet-500 to-purple-400"
+          bgLight="bg-violet-50"
+        />
+        <StatCard
+          icon={Clock}
+          label="Pending Analysis"
+          value={stats?.data?.queue?.pending}
+          sublabel="In Queue"
+          gradient="from-amber-500 to-orange-400"
+          bgLight="bg-amber-50"
+        />
       </div>
-      <div className="flex pl-12 gap-4 pt-5 mb-2">
-        <div className="rounded-md bg-blue-100 p-4 text-black w-64 h-35">
-          <Image src="/email.png" alt="" width={40} height={40} />
-          <div>Email Fetched Today</div>
-          <div className="text-3xl">
-            {websocket_incoming_data?.data?.stats?.fetch_today}
+
+      {/* Fetch control card */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">
+              Data Fetch Control
+            </h2>
+            <p className="text-sm text-gray-400 mt-0.5">
+              Trigger or stop live email fetching
+            </p>
           </div>
+          <button
+            onClick={handleToggle}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              isFetching
+                ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100"
+                : "bg-indigo-600 text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700"
+            }`}
+          >
+            {isFetching ? (
+              <>
+                <Square size={14} />
+                Stop Fetching
+              </>
+            ) : (
+              <>
+                <Play size={14} />
+                Fetch Now
+              </>
+            )}
+          </button>
         </div>
-        <div className="rounded-md bg-blue-100  p-4 text-black w-64 h-35">
-          <Image
-            src="/artificial-intelligence.png"
-            alt=""
-            width={40}
-            height={40}
-          />
-          <div>AI Analysis Done Today</div>
-          <div className="text-3xl">
-            {websocket_incoming_data?.data?.stats?.completed}
+
+        {isFetching && (
+          <div className="mt-4 flex items-center gap-2.5 text-sm text-indigo-700 bg-indigo-50 rounded-xl px-4 py-3">
+            <RefreshCw size={14} className="animate-spin flex-shrink-0" />
+            <span>
+              Fetching emails and running AI analysis in the background…
+            </span>
           </div>
-        </div>
-        <div className="rounded-md bg-blue-100  p-4 text-black w-64 h-35">
-          <Image src="/sand-clock.png" alt="" width={40} height={40} />
-          <div>Pending Analysis</div>
-          <div className="text-3xl">
-            {websocket_incoming_data?.data?.queue?.pending}
-          </div>
-          <div>In Queue</div>
-        </div>
+        )}
       </div>
-      <div className="pl-12 mb-2">
-        <div className="border text-black border-gray-300 h-20 rounded-md mr-12">
-          <span className="text-2xl pl-2">Recent Reports</span>
-          <span className="pl-100">
-            <button
-              onClick={handleToggle}
-              className="bg-blue-600 text-white px-3 py-3 rounded-lg inline-flex items-center gap-2 hover:bg-blue-700 transition mt-3"
-            >
-              {isFetching ? "Stop Fetching" : "Fetch Dashboard Now"}
-            </button>
-          </span>
-        </div>
-      </div>
-      <p className="text-black pl-12 pt-2">
-        • Al analysis runs continuously. Most emails are processed within 2-5
+
+      {/* Footer note */}
+      <p className="text-xs text-gray-400 flex items-center gap-1.5">
+        <span className="inline-block w-1 h-1 rounded-full bg-gray-300 flex-shrink-0" />
+        AI analysis runs continuously. Most emails are processed within 2–5
         minutes.
       </p>
     </div>
