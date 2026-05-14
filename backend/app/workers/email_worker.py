@@ -6,6 +6,8 @@ from app.db.models.schedule import dashboard_schedules as dashboardModel
 from app.services.email_service import process_dashboard
 from datetime import datetime,timedelta
 import asyncio
+from arq import create_pool
+from arq.connections import RedisSettings
 
 
 async def process_single_schedule(schedule):
@@ -13,9 +15,10 @@ async def process_single_schedule(schedule):
         result = await session.execute(
             select(userModel.User).where(userModel.User.id == schedule.user_id)
         )
+        redis = await create_pool(RedisSettings(host="localhost"))
         user = result.scalars().one()
-        
-        await process_dashboard(user.id, user.username, session)
+        await redis.enqueue_job("process_dashboard", user.id, user.username)
+        # await process_dashboard(user.id, user.username, session)
         
         freq_hours = {
             ScheduleEnum.everyday: 24,

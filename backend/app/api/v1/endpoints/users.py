@@ -50,6 +50,5 @@ async def update_file(request: Request,file:UploadFile=File(...),session:AsyncSe
         return {"url": url}
 
     except Exception as e:
-        print("errror==>",e)
         await session.rollback()
         raise HTTPException(status_code=500, detail=str(e))

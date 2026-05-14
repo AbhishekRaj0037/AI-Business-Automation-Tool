@@ -82,7 +82,7 @@ async def change_password(request: Request,response:Response,session:AsyncSessio
     result=result.scalars().first()
     if result is None:
         print("User doesn't exsist")
-        return
+        raise HTTPException(status_code=404, detail="User not found")
     if body["new_password"] != body["confirm_new_password"]:
         print("New password and confirm new password don't match")
         raise HTTPException(status_code=401,detail="Password missmatch")

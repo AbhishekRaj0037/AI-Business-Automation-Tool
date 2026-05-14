@@ -12,6 +12,7 @@ from botocore.exceptions import ClientError
 from pathlib import Path
 import asyncio
 import email as email_lib
+from app.dependencies import Session
 
 BUCKET = "amzn-s3-bucket-ai-business-automation-assistant"
 MAX_RETRIES = 5
@@ -176,65 +177,65 @@ async def _fetch_and_store_email(userId: str, uid_int: int, uid_bytes: bytes, ma
         return False
 
 
-async def process_dashboard(userId: str, username: str, session):
+async def process_dashboard(userId: str, username: str):
     print("Welcome", username)
     await set_task_status(userId, "true")
+    async with Session() as session:
+        mail = await get_imap_connection(userId, session)
+        if mail is None:
+            await set_task_status(userId, "false")
+            return
 
-    mail = await get_imap_connection(userId, session)
-    if mail is None:
-        await set_task_status(userId, "false")
-        return
+        await asyncio.to_thread(mail.select, "inbox")
 
-    await asyncio.to_thread(mail.select, "inbox")
-
-    # Phase 1: Retry previously failed emails (retry_count < MAX_RETRIES)
-    result = await session.execute(
-        select(failed_emails)
-        .where(
-            failed_emails.user_id == userId,
-            failed_emails.retry_count < MAX_RETRIES,
+        # Phase 1: Retry previously failed emails (retry_count < MAX_RETRIES)
+        result = await session.execute(
+            select(failed_emails)
+            .where(
+                failed_emails.user_id == userId,
+                failed_emails.retry_count < MAX_RETRIES,
+            )
+            .order_by(failed_emails.retry_count, failed_emails.last_attempt_at)
         )
-        .order_by(failed_emails.retry_count, failed_emails.last_attempt_at)
-    )
-    retryable = result.scalars().all()
+        retryable = result.scalars().all()
 
-    for record in retryable:
+        for record in retryable:
+            status = await get_task_status(userId)
+            if status != "true":
+                print(f"Stopped fetching during retries for {username}")
+                break
+            print(f"Retrying UID {record.imap_uid} (attempt {record.retry_count + 1}/{MAX_RETRIES}) for {username}")
+            await _fetch_and_store_email(
+                userId, record.imap_uid, str(record.imap_uid).encode(), mail, session
+            )
+
+        # Phase 2: Fetch new emails beyond the last successfully committed imap_uid
         status = await get_task_status(userId)
         if status != "true":
-            print(f"Stopped fetching during retries for {username}")
-            break
-        print(f"Retrying UID {record.imap_uid} (attempt {record.retry_count + 1}/{MAX_RETRIES}) for {username}")
-        await _fetch_and_store_email(
-            userId, record.imap_uid, str(record.imap_uid).encode(), mail, session
-        )
+            await set_task_status(userId, "false")
+            mail.close()
+            return
 
-    # Phase 2: Fetch new emails beyond the last successfully committed imap_uid
-    status = await get_task_status(userId)
-    if status != "true":
+        latest = await session.execute(
+            select(email_metadata)
+            .where(email_metadata.user_id == userId)
+            .order_by(desc(email_metadata.imap_uid))
+            .limit(1)
+        )
+        latest = latest.scalars().first()
+        starting_uid = latest.imap_uid if latest is not None else 0
+
+        uids = await asyncio.to_thread(mail.uid, "search", None, f"UID {starting_uid + 1}:*")
+        uid_list = uids[1][0].split()
+
+        for uid_bytes in uid_list:
+            status = await get_task_status(userId)
+            if status != "true":
+                print(f"Stopped fetching for {username}")
+                break
+            uid_int = int(uid_bytes)
+            print(f"Fetching UID {uid_int} for {username}...")
+            await _fetch_and_store_email(userId, uid_int, uid_bytes, mail, session)
+
         await set_task_status(userId, "false")
         mail.close()
-        return
-
-    latest = await session.execute(
-        select(email_metadata)
-        .where(email_metadata.user_id == userId)
-        .order_by(desc(email_metadata.imap_uid))
-        .limit(1)
-    )
-    latest = latest.scalars().first()
-    starting_uid = latest.imap_uid if latest is not None else 0
-
-    uids = await asyncio.to_thread(mail.uid, "search", None, f"UID {starting_uid + 1}:*")
-    uid_list = uids[1][0].split()
-
-    for uid_bytes in uid_list:
-        status = await get_task_status(userId)
-        if status != "true":
-            print(f"Stopped fetching for {username}")
-            break
-        uid_int = int(uid_bytes)
-        print(f"Fetching UID {uid_int} for {username}...")
-        await _fetch_and_store_email(userId, uid_int, uid_bytes, mail, session)
-
-    await set_task_status(userId, "false")
-    mail.close()

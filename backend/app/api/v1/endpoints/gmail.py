@@ -51,9 +51,7 @@ async def gmail_callback(code:str,state:str,request:Request,session:AsyncSession
     background_tasks.add_task(
         process_dashboard,
         userId=request.state.userId,
-        username=request.state.username,
-        session=session
-
+        username=request.state.username
     )
     await websckt.set_task_status(request.state.userId,"true")
     return RedirectResponse(

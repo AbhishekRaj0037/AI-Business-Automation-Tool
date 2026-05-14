@@ -8,7 +8,12 @@ router=APIRouter()
 
 @router.get("/")
 async def read_root(request:Request,session:AsyncSession= Depends(get_session)):
-    await process_dashboard(request.state.userId,request.state.username,session)
+    await request.app.state.redis_pool.enqueue_job(
+        "fetch_emails_task",
+        request.state.userId,
+        request.state.username,
+    )
+    return {"status": "queued"}
 
 @router.get("/stop-fetching")
 async def stop_fetching(request:Request,session:AsyncSession= Depends(get_session)):

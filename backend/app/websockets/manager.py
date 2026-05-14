@@ -2,7 +2,9 @@ from fastapi import WebSocket
 import redis.asyncio as redis
 from app.config import settings
 
+
 r=redis.Redis(host=settings.Redis_DB,port=6379,decode_responses=True)
+
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState

@@ -53,3 +53,5 @@ async def search_document(request:Request,session:AsyncSession= Depends(get_sess
     await session.execute(schedule_update)
     await session.commit()
     print("Successful time update")
+
+    return 
