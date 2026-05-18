@@ -21,8 +21,15 @@ embeddings = OpenAIEmbeddings(
 )
 
 
-vectorstore=PGVector(
-connection_string=settings.DBUrl.replace("+asyncpg", ""),
-embedding_function=embeddings,
-collection_name="documents"
-)
+_db_url = settings.DBUrl.replace("+asyncpg", "")
+_vectorstore_cache: dict[str, PGVector] = {}
+
+
+def get_user_vectorstore(user_id: str) -> PGVector:
+    if user_id not in _vectorstore_cache:
+        _vectorstore_cache[user_id] = PGVector(
+            connection_string=_db_url,
+            embedding_function=embeddings,
+            collection_name=f"user_{user_id}",
+        )
+    return _vectorstore_cache[user_id]

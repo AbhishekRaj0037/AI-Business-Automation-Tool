@@ -17,8 +17,7 @@ async def process_single_schedule(schedule):
         )
         redis = await create_pool(RedisSettings(host="localhost"))
         user = result.scalars().one()
-        await redis.enqueue_job("process_dashboard", user.id, user.username)
-        # await process_dashboard(user.id, user.username, session)
+        await redis.enqueue_job("fetch_emails_task", user.id, user.username)
         
         freq_hours = {
             ScheduleEnum.everyday: 24,

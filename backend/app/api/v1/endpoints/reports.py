@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_session
 import  app.websockets.dashboard as wbsckdashboard
 from app.services.parse_files import parse_file
-from app.services.ai_service import splitter,vectorstore,llm
+from app.services.ai_service import splitter,get_user_vectorstore,llm
 from app.services.storage_service import s3
 from datetime import datetime
 from app.db import enums
@@ -90,6 +90,7 @@ async def analyse_report(request:Request,session:AsyncSession= Depends(get_sessi
         file_bytes = await asyncio.to_thread(response["Body"].read)
         loaded_docs=await asyncio.to_thread(parse_file,file_bytes,file_name,s3_key)
         doc_chunks=await asyncio.to_thread(splitter.split_documents,loaded_docs)
+        vectorstore=get_user_vectorstore(request.state.userId)
         await asyncio.to_thread(vectorstore.add_documents,doc_chunks)
         result=update(email.email_attachments_metadata).where((email.email_attachments_metadata.id == report_id) & (email.email_attachments_metadata.user_id==request.state.userId)).values(status=enums.StatusEnum.completed)
         await session.execute(result)
@@ -114,6 +115,7 @@ async def search_document(request:Request,session:AsyncSession= Depends(get_sess
     body=await request.json()
     query=body["query"]
     try:
+        vectorstore=get_user_vectorstore(request.state.userId)
         retriever = await asyncio.to_thread(
         vectorstore.as_retriever,
         search_type="similarity",
